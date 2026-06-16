@@ -1,0 +1,27 @@
+# Distributed Graph Matching - Complete Requirements
+# Install with: pip install -r requirements.txt
+
+# Core Dependencies
+networkx>=3.0
+matplotlib>=3.8.0
+numpy>=1.24.0
+
+# Jupyter Notebook Support
+jupyter>=1.0.0
+jupyterlab>=4.0.0
+ipython>=8.0.0
+pandas>=2.0.0
+
+# Data Processing & Visualization (for notebook)
+scipy>=1.10.0
+seaborn>=0.13.0
+plotly>=5.17.0
+
+# Development & Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-benchmark>=4.0.0
+hypothesis>=6.88.0
+black>=23.0.0
+ruff>=0.1.0
+mypy>=1.5.0
