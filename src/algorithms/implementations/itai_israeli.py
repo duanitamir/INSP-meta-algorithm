@@ -7,7 +7,7 @@ FINAL VERSION: Three-message protocol (PROPOSE -> ACCEPT -> CONFIRM)
 - Provides both rejection handling and timeout retrying
 """
 
-from typing import Dict, List, Tuple, Any
+from typing import List, Tuple
 import random
 from src.algorithms.base import MatchingAlgorithm, AlgorithmMetadata
 from src.state.state_store import StateStore
@@ -68,7 +68,7 @@ class ItaiIsraeliMaximalMatching(MatchingAlgorithm):
             new_state.set("active", False)
             return (new_state, [])
 
-        out_messages = []
+        out_messages: List[Message] = []
         neighbors = new_state.get("neighbors", [])
         if not neighbors:
             new_state.set("active", False)
@@ -165,7 +165,8 @@ class ItaiIsraeliMaximalMatching(MatchingAlgorithm):
         if messages_sent == 0 and round_num > RoundNumber(0):
             return True, "no_progress"
 
-        if round_num > RoundNumber(self.metadata.properties["max_rounds"]):
+        max_rounds = self.metadata.properties.get("max_rounds", 200) if self.metadata.properties else 200
+        if round_num > RoundNumber(max_rounds):
             return True, "max_rounds_exceeded"
 
         return False, None

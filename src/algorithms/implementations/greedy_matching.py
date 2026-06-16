@@ -8,7 +8,7 @@ Distributed greedy algorithm for weighted matching:
 - Converges in O(1) rounds with distributed decision-making
 """
 
-from typing import Dict, List, Tuple
+from typing import List, Tuple
 import random
 from src.algorithms.base import MatchingAlgorithm, AlgorithmMetadata
 from src.state.state_store import StateStore
@@ -71,7 +71,7 @@ class GreedyMatching(MatchingAlgorithm):
             new_state.set("active", False)
             return (new_state, [])
 
-        out_messages = []
+        out_messages: List[Message] = []
         neighbors = new_state.get("neighbors", [])
 
         # No neighbors -> become inactive
@@ -232,7 +232,8 @@ class GreedyMatching(MatchingAlgorithm):
         if messages_sent == 0 and round_num > RoundNumber(0):
             return True, "no_progress"
 
-        if round_num > RoundNumber(self.metadata.properties["max_rounds"]):
+        max_rounds = self.metadata.properties.get("max_rounds", 100) if self.metadata.properties else 100
+        if round_num > RoundNumber(max_rounds):
             return True, "max_rounds_exceeded"
 
         return False, None

@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, Any, List
 import time
 from src.utils.types import RoundNumber
@@ -49,7 +49,6 @@ class MetricsCollector:
         **kwargs: Any,
     ) -> None:
         """Record metrics for a round."""
-        round_start = time.time()
         snapshot = MetricsSnapshot(
             round_num=round_num,
             messages_sent=messages_sent,

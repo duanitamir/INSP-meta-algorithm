@@ -1,6 +1,5 @@
-from typing import Dict, List, FrozenSet, Optional, Any
+from typing import Dict, List, FrozenSet, Any
 import networkx as nx
-from src.utils.types import VertexId, EdgeWeight
 
 
 class GraphManager:
@@ -44,7 +43,7 @@ class GraphManager:
     def add_edge(self, u: int, v: int, weight: float = 1.0) -> None:
         """Add an edge between two vertices."""
         if u not in self._graph or v not in self._graph:
-            raise ValueError(f"Vertices must exist before adding edge")
+            raise ValueError("Vertices must exist before adding edge")
         self._graph.add_edge(u, v, weight=weight)
 
     def num_vertices(self) -> int:

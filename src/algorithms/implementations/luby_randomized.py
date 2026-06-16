@@ -15,7 +15,7 @@ This is a fundamental architectural issue with how proposals and confirmations
 are processed at different logical times. Simple path graphs work correctly.
 """
 
-from typing import Dict, List, Tuple
+from typing import List, Tuple
 import random
 from src.algorithms.base import MatchingAlgorithm, AlgorithmMetadata
 from src.state.state_store import StateStore
@@ -84,9 +84,8 @@ class LubyRandomizedMatching(MatchingAlgorithm):
             new_state.set("is_active", False)
             return (new_state, [])
 
-        out_messages = []
+        out_messages: List[Message] = []
         neighbors = new_state.get("neighbors", [])
-        is_active = new_state.get("is_active", False)
 
         # No neighbors -> become inactive
         if not neighbors:
@@ -246,7 +245,8 @@ class LubyRandomizedMatching(MatchingAlgorithm):
             return True, "no_progress"
 
         # Check max rounds exceeded
-        if round_num > RoundNumber(self.metadata.properties["max_rounds"]):
+        max_rounds = self.metadata.properties.get("max_rounds", 200) if self.metadata.properties else 200
+        if round_num > RoundNumber(max_rounds):
             return True, "max_rounds_exceeded"
 
         return False, None

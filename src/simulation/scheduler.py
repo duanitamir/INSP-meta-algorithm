@@ -1,6 +1,6 @@
 from typing import Dict
 from src.graph.graph_manager import GraphManager
-from src.state.state_store import StateStore, MetaState
+from src.state.state_store import StateStore
 from src.communication.message_queue import MessageQueue
 from src.metrics.metrics_collector import MetricsCollector
 from src.utils.types import RoundNumber
@@ -37,7 +37,7 @@ class Scheduler:
         self._is_running = False
         self._terminated = False
         self._termination_reason: str | None = None
-        self._final_matching = {}
+        self._final_matching: Dict[int, int] = {}
 
     @property
     def current_round(self) -> RoundNumber:
