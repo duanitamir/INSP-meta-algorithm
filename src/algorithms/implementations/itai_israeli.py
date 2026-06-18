@@ -55,9 +55,7 @@ class ItaiIsraeliMaximalMatching(MatchingAlgorithm):
             state.set("negotiation_partner", None)
             state.set("negotiation_stage", None)
             state.set("stage_round", 0)
-            neighbors = list(graph.neighbors(node_id))
-            state.set("neighbors", neighbors)
-            state.set("active", len(neighbors) > 0)
+            state.set("active", graph.degree(node_id) > 0)
             state_store.update_node_state(node_id, state)
 
     def node_behavior(self, node_id: int, node_state, messages: List[Message], context) -> Tuple:
@@ -69,7 +67,7 @@ class ItaiIsraeliMaximalMatching(MatchingAlgorithm):
             return (new_state, [])
 
         out_messages: List[Message] = []
-        neighbors = new_state.get("neighbors", [])
+        neighbors = list(context.graph.neighbors(node_id))
         if not neighbors:
             new_state.set("active", False)
             return (new_state, out_messages)

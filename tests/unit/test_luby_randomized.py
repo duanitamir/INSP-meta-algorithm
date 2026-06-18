@@ -56,7 +56,7 @@ class TestLubyRandomizedInitialization:
             state = store.get_node_state(node_id)
             assert state.get("matched_to") is None
             assert state.get("is_active") is True
-            assert state.get("neighbors") is not None
+            assert state.get("has_neighbors") is True
 
     def test_initialize_isolated_nodes(self):
         """Test initialization with isolated nodes."""
@@ -92,7 +92,7 @@ class TestLubyRandomizedInitialization:
         for node_id in graph.vertices():
             state = store.get_node_state(node_id)
             assert state.get("is_active") is True
-            assert len(state.get("neighbors")) > 0
+            assert state.get("has_neighbors") is True
 
 
 class TestLubyRandomizedNodeBehavior:

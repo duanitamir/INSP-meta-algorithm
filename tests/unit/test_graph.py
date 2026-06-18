@@ -80,3 +80,41 @@ class TestGraphManager:
         assert frozenset([1, 2, 3]) in components
         assert frozenset([4, 5]) in components
         assert frozenset([6]) in components
+
+    def test_neighbors_without_state_store_returns_all(self, simple_graph):
+        """Neighbors without state_store should return all neighbors."""
+        neighbors_2 = simple_graph.neighbors(2, state_store=None, filter_active=False)
+        assert neighbors_2 == frozenset([1, 3])
+        neighbors_2_no_filter = simple_graph.neighbors(2)
+        assert neighbors_2_no_filter == frozenset([1, 3])
+
+    def test_neighbors_with_state_store_unfiltered(self, simple_graph, state_store_simple):
+        """Neighbors with state_store but filter_active=False should return all."""
+        neighbors_2 = simple_graph.neighbors(2, state_store=state_store_simple, filter_active=False)
+        assert neighbors_2 == frozenset([1, 3])
+
+    def test_neighbors_filters_matched_nodes(self, simple_graph, state_store_simple):
+        """Neighbors with filter_active=True should exclude matched nodes."""
+        # Mark node 1 as matched
+        state_1 = state_store_simple.get_node_state(1)
+        state_1.set("matched_to", 2)
+        state_store_simple.update_node_state(1, state_1)
+
+        # Node 2's neighbors should exclude node 1 (it's matched)
+        neighbors_2 = simple_graph.neighbors(2, state_store=state_store_simple, filter_active=True)
+        assert neighbors_2 == frozenset([3])
+
+    def test_neighbors_filters_multiple_matched_nodes(self, simple_graph, state_store_simple):
+        """Neighbors filtering should handle multiple matched neighbors."""
+        # Mark both node 1 and node 3 as matched
+        state_1 = state_store_simple.get_node_state(1)
+        state_1.set("matched_to", 4)
+        state_store_simple.update_node_state(1, state_1)
+
+        state_3 = state_store_simple.get_node_state(3)
+        state_3.set("matched_to", 4)
+        state_store_simple.update_node_state(3, state_3)
+
+        # Node 2's neighbors should be empty (all matched)
+        neighbors_2 = simple_graph.neighbors(2, state_store=state_store_simple, filter_active=True)
+        assert neighbors_2 == frozenset()

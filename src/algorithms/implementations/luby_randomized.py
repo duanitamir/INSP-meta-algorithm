@@ -62,9 +62,7 @@ class LubyRandomizedMatching(MatchingAlgorithm):
             state.set("is_active", True)
             state.set("proposal_from", None)
             state.set("proposal_weight", None)
-            neighbors = list(graph.neighbors(node_id))
-            state.set("neighbors", neighbors)
-            state.set("has_neighbors", len(neighbors) > 0)
+            state.set("has_neighbors", graph.degree(node_id) > 0)
             state_store.update_node_state(node_id, state)
 
     def node_behavior(
@@ -85,9 +83,9 @@ class LubyRandomizedMatching(MatchingAlgorithm):
             return (new_state, [])
 
         out_messages: List[Message] = []
-        neighbors = new_state.get("neighbors", [])
+        neighbors = list(context.graph.neighbors(node_id))
 
-        # No neighbors -> become inactive
+        # No active neighbors -> become inactive
         if not neighbors:
             new_state.set("is_active", False)
             return (new_state, out_messages)

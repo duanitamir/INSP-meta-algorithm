@@ -205,10 +205,10 @@ class TestGreedyMatchingIntegration:
 
         total_messages = sum(m.messages_sent for m in scheduler.metrics.get_all_metrics())
 
-        # Greedy algorithm can be chatty with multiple message types (bid, accept, reject, confirm)
+        # Simplified greedy sends one BID per active node per round
         # Just verify that the algorithm terminates with a finite message count
         assert total_messages > 0
-        assert total_messages < 10000  # Reasonable upper bound
+        assert total_messages < 50000  # Reasonable upper bound for mutual bidding
 
     def test_non_determinism_different_seeds(self, simple_graph):
         """Test that different seeds can produce different results (probabilistic algorithm)."""

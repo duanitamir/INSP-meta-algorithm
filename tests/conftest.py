@@ -1,6 +1,7 @@
 import pytest
 from src.graph import GraphManager
 from src.simulation import SimulationConfig
+from src.state.state_store import StateStore
 
 
 @pytest.fixture
@@ -34,6 +35,13 @@ def medium_graph():
         graph.add_edge(u, v, w)
 
     return graph
+
+
+@pytest.fixture
+def state_store_simple(simple_graph):
+    """Create a state store for the simple graph."""
+    state_store = StateStore(simple_graph)
+    return state_store
 
 
 @pytest.fixture

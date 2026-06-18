@@ -14,8 +14,8 @@ class TestGreedyMatchingMetadata:
         algo = GreedyMatching()
         metadata = algo.metadata
 
-        assert metadata.name == "Greedy Distributed Matching"
-        assert metadata.version == "1.0.0"
+        assert metadata.name == "Simplified Greedy Distributed Matching"
+        assert metadata.version == "2.0.0"
         assert len(metadata.authors) > 0
         assert metadata.properties is not None
 
@@ -26,7 +26,7 @@ class TestGreedyMatchingMetadata:
 
         assert props["produces_maximal"] is True
         assert props["produces_maximum"] is False
-        assert props["deterministic"] is False
+        assert props["deterministic"] is True
         assert props["max_rounds"] == 100
 
 
@@ -47,8 +47,7 @@ class TestGreedyMatchingInitialization:
         for node_id in graph.vertices():
             state = store.get_node_state(node_id)
             assert state.get("matched_to") is None
-            assert state.get("current_bid") is None
-            assert state.get("neighbors") is not None
+            assert state.get("active") is True  # All have neighbors
 
     def test_initialize_isolated_nodes(self):
         """Test initialization with isolated nodes."""
@@ -83,7 +82,8 @@ class TestGreedyMatchingInitialization:
         for node_id in graph.vertices():
             state = store.get_node_state(node_id)
             assert state.get("active") is True
-            assert len(state.get("neighbors")) == 2
+            # We don't store neighbors in state anymore, check via graph
+            assert len(graph.neighbors(node_id)) == 2
 
 
 class TestGreedyMatchingNodeBehavior:
@@ -108,6 +108,7 @@ class TestGreedyMatchingNodeBehavior:
         class Context:
             round_num = RoundNumber(0)
             graph = self.graph
+            state_store = store
 
         new_state, messages = algo.node_behavior(1, state, [], Context())
 
@@ -129,6 +130,7 @@ class TestGreedyMatchingNodeBehavior:
         class Context:
             round_num = RoundNumber(0)
             graph = isolated_graph
+            state_store = store
 
         new_state, messages = algo.node_behavior(1, state, [], Context())
 
@@ -147,6 +149,7 @@ class TestGreedyMatchingNodeBehavior:
         class Context:
             round_num = RoundNumber(0)
             graph = self.graph
+            state_store = store
 
         new_state, messages = algo.node_behavior(1, state, [], Context())
 
@@ -155,23 +158,21 @@ class TestGreedyMatchingNodeBehavior:
         assert messages[0].recipient == 2  # Highest weight neighbor
         assert messages[0].payload["weight"] == 2.0
 
-    def test_node_behavior_accepts_best_bid(self):
-        """Test that nodes prioritize best BID when deciding who to negotiate with."""
+    def test_node_behavior_mutual_bid_matches(self):
+        """Test that mutual bids result in immediate match."""
         algo = GreedyMatching()
         store = StateStore(self.graph)
         algo.initialize_state(store, self.graph)
 
-        # Set node 2 to already be negotiating with node 3 (lower weight bid)
-        state = store.get_node_state(2)
-        state.set("current_bid_partner", 3)
-        state.set("current_bid", 1.5)
+        state = store.get_node_state(1)
+        # Node 1 has neighbor 2 (weight 2.0)
+        # Node 2 bids to node 1 -> mutual bid
 
-        # Node 2 receives a better bid from node 1
         messages = [
             Message(
-                sender=1,
-                recipient=2,
-                payload={"type": "BID", "weight": 2.0, "bidder_id": 1},
+                sender=2,
+                recipient=1,
+                payload={"type": "BID", "weight": 2.0, "bidder_id": 2},
                 round_num=RoundNumber(0),
             ),
         ]
@@ -179,45 +180,46 @@ class TestGreedyMatchingNodeBehavior:
         class Context:
             round_num = RoundNumber(0)
             graph = self.graph
+            state_store = store
 
-        new_state, out_messages = algo.node_behavior(2, state, messages, Context())
+        new_state, out_messages = algo.node_behavior(1, state, messages, Context())
 
-        # Should reject node 3 and accept node 1 (better weight)
-        accept_msgs = [m for m in out_messages if m.payload["type"] == "ACCEPT"]
-        reject_msgs = [m for m in out_messages if m.payload["type"] == "REJECT"]
+        # Node 1 bids to node 2 (best neighbor)
+        # Node 2 also bid to node 1 -> MUTUAL MATCH
+        assert new_state.is_matched()
+        assert new_state.get_matched_to() == 2
+        assert new_state.get("active") is False
 
-        assert any(m.recipient == 1 for m in accept_msgs), "Should accept best bidder (1)"
-        assert any(m.recipient == 3 for m in reject_msgs), "Should reject previous partner (3)"
-
-    def test_node_behavior_matches_on_acceptance(self):
-        """Test that bidder matches when receiving ACCEPT."""
+    def test_node_behavior_non_mutual_bid_no_match(self):
+        """Test that non-mutual bids don't result in match."""
         algo = GreedyMatching()
         store = StateStore(self.graph)
         algo.initialize_state(store, self.graph)
 
         state = store.get_node_state(1)
-        state.set("current_bid_partner", 2)
-        state.set("current_bid", 2.0)
+        # Node 1 has neighbor 2 (weight 2.0)
+        # Node 3 bids to node 1 (not mutual) -> no match
 
-        # Receive ACCEPT from partner
         messages = [
             Message(
-                sender=2,
+                sender=3,
                 recipient=1,
-                payload={"type": "ACCEPT"},
+                payload={"type": "BID", "weight": 1.0, "bidder_id": 3},
                 round_num=RoundNumber(0),
-            )
+            ),
         ]
 
         class Context:
             round_num = RoundNumber(0)
             graph = self.graph
+            state_store = store
 
         new_state, out_messages = algo.node_behavior(1, state, messages, Context())
 
-        assert new_state.is_matched()
-        assert new_state.get_matched_to() == 2
-        assert new_state.get("active") is False
+        # Node 1 bids to node 2 (best neighbor, not node 3)
+        # No mutual bid with node 3 -> no match
+        assert not new_state.is_matched()
+        assert new_state.get("active") is True
 
     def test_node_behavior_handles_rejection(self):
         """Test that nodes handle REJECT messages and process them."""
@@ -250,6 +252,7 @@ class TestGreedyMatchingNodeBehavior:
         class Context:
             round_num = RoundNumber(0)
             graph = test_graph
+            state_store = store
 
         new_state, out_messages = algo.node_behavior(1, state, messages, Context())
 
@@ -399,7 +402,7 @@ class TestGreedyMatchingValidation:
 class TestGreedyDeadlockFix:
     """Tests for the symmetric bids deadlock fix (Issue: equal-weight bids should accept with tie-breaking)."""
 
-    def test_symmetric_bids_with_equal_weight_are_accepted(self):
+    def test_edge_based_tie_breaking_with_equal_weights(self):
         """
         Test that when two nodes bid to each other with equal weight, one accepts
         (based on node ID, higher ID accepts).
@@ -445,20 +448,18 @@ class TestGreedyDeadlockFix:
         for msg in msgs_2:
             msg_queue.send(msg)
 
-        # Round 2: Nodes receive bids and should accept/reject
+        # Round 2: Nodes receive bids - mutual bid should cause match
         node_1_msgs = msg_queue.get_messages(1)
         new_state_1, msgs_1_response = algo.node_behavior(1, new_state_1, node_1_msgs, context)
 
         node_2_msgs = msg_queue.get_messages(2)
         new_state_2, msgs_2_response = algo.node_behavior(2, new_state_2, node_2_msgs, context)
 
-        # Node 1 should accept Node 2's bid (2 > 1), Node 2 should NOT accept Node 1's bid (1 > 2 is false)
-        node_1_accepts = sum(1 for msg in msgs_1_response if msg.payload.get("type") == "ACCEPT")
-        node_2_accepts = sum(1 for msg in msgs_2_response if msg.payload.get("type") == "ACCEPT")
-
-        # Exactly one ACCEPT should be sent (from Node 1)
-        assert node_1_accepts > 0, "Node 1 should accept equal-weight bid from Node 2 (2 > 1)"
-        assert node_2_accepts == 0, "Node 2 should NOT accept equal-weight bid from Node 1 (1 > 2 is false)"
+        # With mutual bids (node 1 -> 2 and node 2 -> 1), both should match
+        assert new_state_1.is_matched(), "Node 1 should match with Node 2 (mutual bid)"
+        assert new_state_2.is_matched(), "Node 2 should match with Node 1 (mutual bid)"
+        assert new_state_1.get_matched_to() == 2
+        assert new_state_2.get_matched_to() == 1
 
     def test_higher_node_id_accepts_equal_weight_bid(self):
         """

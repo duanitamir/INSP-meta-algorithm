@@ -24,7 +24,7 @@ class TestItaiIsraeliAlgorithm:
             state = store.get_node_state(node_id)
             assert state.get("status") == "free"
             assert not state.is_matched()
-            assert state.get("neighbors") is not None
+            assert state.get("active") == (simple_graph.degree(node_id) > 0)
 
     def test_node_proposal_generation(self, simple_graph):
         algo = ItaiIsraeliMaximalMatching()

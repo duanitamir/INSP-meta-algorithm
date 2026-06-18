@@ -1,23 +1,32 @@
 """
-Greedy Distributed Matching Algorithm
+Simplified Greedy Distributed Matching Algorithm
 
-Distributed greedy algorithm for weighted matching:
-- Each node greedily matches with its highest-weight available neighbor
-- Nodes compare bids and the winner is selected (higher ID wins ties)
-- Once matched, node becomes inactive
-- Converges in O(1) rounds with distributed decision-making
+Protocol:
+1. Each round, unmatched nodes bid to their best neighbor (by weight, then edge for tie break)
+2. If two nodes bid to each other (mutual bid), they match immediately
+3. Both become inactive
+4. Continue until no unmatched nodes or no progress
+
+Tie-breaking:
+- Primary: Edge weight (higher is better)
+- Secondary: Canonical edge (u, v) where u < v (lexicographic)
+This prevents circular bidding chains with equal weights.
+
+Edge Representation:
+- Canonical: Edge(u, v) where u <= v
+- Matched edges tracked as MatchedEdge(edge, weight)
 """
-
-from typing import List, Tuple
+from asyncio import log
+from typing import List, Tuple, Dict
 import random
 from src.algorithms.base import MatchingAlgorithm, AlgorithmMetadata
 from src.state.state_store import StateStore
 from src.communication.message import Message
-from src.utils.types import RoundNumber
+from src.utils.types import RoundNumber, Edge, MatchedEdge
 
 
 class GreedyMatching(MatchingAlgorithm):
-    """Greedy Distributed Weighted Matching Algorithm."""
+    """Simplified Greedy Distributed Matching with Mutual Bidding."""
 
     def __init__(self, seed: int | None = None):
         self.seed = seed
@@ -25,16 +34,15 @@ class GreedyMatching(MatchingAlgorithm):
             random.seed(seed)
 
         self._metadata = AlgorithmMetadata(
-            name="Greedy Distributed Matching",
-            description="Distributed greedy algorithm that matches nodes with highest-weight neighbors",
-            version="1.0.0",
+            name="Simplified Greedy Distributed Matching",
+            description="Each round: bid to best neighbor. Mutual bids match immediately.",
+            version="2.0.0",
             authors=["Distributed Systems"],
-            references=["Standard greedy matching"],
+            references=["Greedy matching"],
             properties={
                 "produces_maximal": True,
                 "produces_maximum": False,
-                "deterministic": False,
-                "round_complexity": "O(log n)",
+                "deterministic": True,
                 "message_complexity": "O(m)",
                 "max_rounds": 100,
             },
@@ -50,172 +58,107 @@ class GreedyMatching(MatchingAlgorithm):
         for node_id in graph.vertices():
             state = state_store.get_node_state(node_id)
             state.set("matched_to", None)
-            state.set("current_bid", None)
-            state.set("current_bid_partner", None)
-            neighbors = list(graph.neighbors(node_id))
-            state.set("neighbors", neighbors)
-            state.set("active", len(neighbors) > 0)
+            state.set("last_bid_to", None)  # Who we bid to this round
+            state.set("last_bid_weight", None)  # Weight of our bid
+            state.set("active", graph.degree(node_id) > 0)
+            state.set("matched_edges", [])  # Track matched edges
             state_store.update_node_state(node_id, state)
 
     def node_behavior(
         self, node_id: int, node_state, messages: List[Message], context
     ) -> Tuple:
         """
-        Greedy matching with symmetric confirmation.
-        Protocol: BID -> ACCEPT -> CONFIRM to ensure both nodes match.
+        Greedy matching with mutual bidding.
+        Each round: send BID to best neighbor, check for mutual bids to match.
         """
         new_state = node_state.clone()
 
         # If already matched, stay inactive
         if new_state.is_matched():
             new_state.set("active", False)
-            return (new_state, [])
+            return new_state, []
 
         out_messages: List[Message] = []
-        neighbors = new_state.get("neighbors", [])
+        # Get only active (unmatched) neighbors for bidding
+        neighbors = list(context.graph.neighbors(node_id, state_store=context.state_store, filter_active=True))
 
-        # No neighbors -> become inactive
+        # No active neighbors -> become inactive
         if not neighbors:
+            new_state.set("active", False)
+            return new_state, out_messages
+
+        best_neighbor = None
+        best_weight = -1
+        best_edge = None
+
+        for neighbor in neighbors:
+            weight = context.graph.get_edge_weight(node_id, neighbor)
+            edge = Edge.from_nodes(node_id, neighbor)
+
+
+            # Compare: (weight DESC, edge canonical)
+            if best_neighbor is None or (weight > best_weight or
+                (weight == best_weight and edge > best_edge)):
+                best_weight = weight
+                best_neighbor = neighbor
+                best_edge = edge
+
+        if best_neighbor is None:
             new_state.set("active", False)
             return (new_state, out_messages)
 
-        current_bid_partner = new_state.get("current_bid_partner")
+        # Send BID to best neighbor
+        new_state.set("last_bid_to", best_neighbor)
+        new_state.set("last_bid_weight", best_weight)
+        new_state.set("active", True)
 
-        # Step 1: Process CONFIRM messages - if we receive CONFIRM, we're matched!
-        confirms = [msg for msg in messages if msg.payload.get("type") == "CONFIRM"]
-        for msg in confirms:
-            if msg.sender == current_bid_partner:
-                new_state.set_matched_to(current_bid_partner)
-                new_state.set("active", False)
-                new_state.set("current_bid", None)
-                new_state.set("current_bid_partner", None)
-                return (new_state, out_messages)
+        out_messages.append(
+            Message(
+                sender=node_id,
+                recipient=best_neighbor,
+                payload={
+                    "type": "BID",
+                    "weight": best_weight,
+                    "bidder_id": node_id,
+                },
+                round_num=context.round_num,
+            )
+        )
 
-        # Step 2: Process ACCEPT messages - if partner accepted our bid, send CONFIRM
-        acceptances = [
-            msg for msg in messages if msg.payload.get("type") == "ACCEPT"
-        ]
-        for msg in acceptances:
-            if msg.sender == current_bid_partner:
-                # Match and send CONFIRM
-                new_state.set_matched_to(current_bid_partner)
+        # Check for mutual bids: did best_neighbor bid to us?
+        received_bids = [msg for msg in messages if msg.payload.get("type") == "BID"]
+
+
+        for bid in received_bids:
+            bidder = bid.sender
+
+            # Mutual bid: bidder bid to us AND we bid to bidder
+            if bidder == best_neighbor:
+                # MATCH: both nodes match each other
+                new_state.set_matched_to(best_neighbor)
                 new_state.set("active", False)
-                new_state.set("current_bid", None)
-                new_state.set("current_bid_partner", None)
-                out_messages.append(
-                    Message(
-                        sender=node_id,
-                        recipient=msg.sender,
-                        payload={"type": "CONFIRM"},
-                        round_num=context.round_num,
-                    )
+                new_state.set("last_bid_to", None)
+                new_state.set("last_bid_weight", None)
+
+                # Record matched edge
+                matched_edge = MatchedEdge(
+                    edge=Edge.from_nodes(node_id, best_neighbor),
+                    weight=best_weight,
                 )
-                return (new_state, out_messages)
+                matched_edges = new_state.get("matched_edges", [])
+                matched_edges.append(matched_edge)
+                new_state.set("matched_edges", matched_edges)
 
-        # Step 3: Process REJECT messages - clear bid if rejected
-        rejections = [
-            msg for msg in messages if msg.payload.get("type") == "REJECT"
-        ]
-        for msg in rejections:
-            if msg.sender == current_bid_partner:
-                new_state.set("current_bid", None)
-                new_state.set("current_bid_partner", None)
-
-        # Step 4: If we don't have an active bid, send one to best neighbor
-        if not new_state.get("current_bid_partner"):
-            best_neighbor = None
-            best_weight = -1
-
-            for neighbor in neighbors:
-                weight = context.graph.get_edge_weight(node_id, neighbor)
-                if weight > best_weight:
-                    best_weight = weight
-                    best_neighbor = neighbor
-
-            if best_neighbor is not None:
-                new_state.set("current_bid", best_weight)
-                new_state.set("current_bid_partner", best_neighbor)
-                new_state.set("active", True)
-
+                # Send confirmation that we matched
                 out_messages.append(
                     Message(
                         sender=node_id,
                         recipient=best_neighbor,
-                        payload={
-                            "type": "BID",
-                            "weight": best_weight,
-                            "bidder_id": node_id,
-                        },
+                        payload={"type": "MATCH_CONFIRMED"},
                         round_num=context.round_num,
                     )
                 )
-            else:
-                new_state.set("active", False)
                 return (new_state, out_messages)
-
-        # Step 5: Process incoming BIDs - respond with ACCEPT/REJECT
-        bids = [msg for msg in messages if msg.payload.get("type") == "BID"]
-        if bids:
-            # Sort by (weight DESC, bidder_id DESC) for deterministic tie-breaking
-            bids_sorted = sorted(
-                bids,
-                key=lambda m: (m.payload["weight"], m.payload["bidder_id"]),
-                reverse=True,
-            )
-
-            best_bid = bids_sorted[0]
-            best_bidder = best_bid.sender
-            best_weight_received = best_bid.payload["weight"]
-
-            current_bid_weight = new_state.get("current_bid", -1)
-            current_partner = new_state.get("current_bid_partner")
-
-            # Decide if we should accept this best bid
-            # Tie-breaking: on equal weights, higher node ID accepts
-            # This prevents deadlock when nodes with equal-weight edges bid to each other
-            should_accept = (
-                current_partner is None
-                or best_weight_received > current_bid_weight
-                or (
-                    best_weight_received >= current_bid_weight
-                    and best_bidder > node_id
-                )
-            )
-
-            if should_accept:
-                # Reject previous partner if we had one
-                if current_partner is not None:
-                    out_messages.append(
-                        Message(
-                            sender=node_id,
-                            recipient=current_partner,
-                            payload={"type": "REJECT"},
-                            round_num=context.round_num,
-                        )
-                    )
-
-                # Accept best bid
-                new_state.set("current_bid_partner", best_bidder)
-                new_state.set("current_bid", best_weight_received)
-                out_messages.append(
-                    Message(
-                        sender=node_id,
-                        recipient=best_bidder,
-                        payload={"type": "ACCEPT"},
-                        round_num=context.round_num,
-                    )
-                )
-
-            # Reject all other bids
-            for other_bid in bids_sorted[1:]:
-                out_messages.append(
-                    Message(
-                        sender=node_id,
-                        recipient=other_bid.sender,
-                        payload={"type": "REJECT"},
-                        round_num=context.round_num,
-                    )
-                )
 
         return (new_state, out_messages)
 
@@ -232,8 +175,61 @@ class GreedyMatching(MatchingAlgorithm):
         if messages_sent == 0 and round_num > RoundNumber(0):
             return True, "no_progress"
 
-        max_rounds = self.metadata.properties.get("max_rounds", 100) if self.metadata.properties else 100
+        max_rounds = (
+            self.metadata.properties.get("max_rounds", 100)
+            if self.metadata.properties
+            else 100
+        )
         if round_num > RoundNumber(max_rounds):
             return True, "max_rounds_exceeded"
 
         return False, None
+
+    def extract_matching(self, state_store: StateStore, graph) -> Dict[int, int]:
+        """Extract final matching from state store."""
+        matching: Dict[int, int] = {}
+        all_states = state_store.get_all_states()
+
+        for node_id, state in all_states.items():
+            matched_to = state.get_matched_to()
+            if matched_to is not None:
+                matching[node_id] = matched_to
+
+        return matching
+
+    def validate_matching(
+        self, matching: Dict[int, int], graph
+    ) -> Tuple[bool, str | None]:
+        """Validate that matching is symmetric and valid."""
+        # Check symmetry
+        for u, v in matching.items():
+            if v not in matching or matching[v] != u:
+                return False, f"Asymmetric: {u}->{v} but {v}->? (not {u})"
+
+            # Check edge exists
+            if not graph.has_edge(u, v):
+                return False, f"Edge {u}-{v} doesn't exist in graph"
+
+        # Check no node matched twice
+        matched_nodes = set()
+        for u, v in matching.items():
+            if u in matched_nodes:
+                return False, f"Node {u} matched multiple times"
+            matched_nodes.add(u)
+
+        return True, None
+
+    def is_maximal_matching(self, matching: Dict[int, int], graph) -> bool:
+        """Check if matching is maximal (can't add more edges)."""
+        matched_nodes = set(matching.keys())
+
+        # For each unmatched edge, at least one endpoint must be matched
+        for u in graph.vertices():
+            if u not in matched_nodes:
+                # u is unmatched, check all neighbors
+                for v in graph.neighbors(u):
+                    if v not in matched_nodes:
+                        # Both u and v unmatched, edge (u,v) could be added
+                        return False
+
+        return True
