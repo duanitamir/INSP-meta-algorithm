@@ -108,7 +108,12 @@ class ItaiIsraeliMaximalMatching(MatchingAlgorithm):
             # Process ACCEPT messages (send CONFIRM) - only if no CONFIRM received
             elif partner in accepts and stage == "proposed":
                 out_messages = self.stage_accept(partner, node_id, context)
+                # Move to "accepted" stage (proposer waiting for nothing - can match now)
                 new_state = self._match_nodes(new_state, partner)
+                return (new_state, out_messages)
+            # If in "accepting" stage, check for CONFIRM from proposer
+            elif partner in confirms and stage == "accepting":
+                new_state = self.stage_confirm(new_state, partner)
 
             # If matched, return early (don't process other stages)
             if new_state.is_matched():
@@ -126,7 +131,9 @@ class ItaiIsraeliMaximalMatching(MatchingAlgorithm):
 
             if not partner or best_weight > current_weight or (best_weight == current_weight and best.sender > partner):
                 out_messages = self.stage_accept_propose(best.sender, node_id, context)
-                new_state = self._match_nodes(new_state, best.sender)
+                # Start negotiation (NOT immediate matching) - will match only after CONFIRM
+                new_state = self._start_negotiation(new_state, best.sender, "accepting")
+                new_state.set("last_bid_weight", best_weight)  # Track weight of current negotiation
                 return (new_state, out_messages)
 
         # Generate new PROPOSE if not currently negotiating
