@@ -81,13 +81,14 @@ class ItaiIsraeliMaximalMatching(MatchingAlgorithm):
     def node_behavior(self, node_id: int, node_state, messages: List[Message], context) -> Tuple:
         new_state = node_state.clone()
 
+        # If already matched, stay inactive (common to all algorithms)
         if new_state.is_matched():
             new_state.set("active", False)
             return (new_state, [])
 
-        # Get only active (unmatched) neighbors to avoid proposals to matched nodes
-        neighbors = list(context.graph.neighbors(node_id, state_store=context.state_store, filter_active=True))
-        if not neighbors:
+        # Get active neighbors (common to all algorithms)
+        neighbors = self.get_active_neighbors(node_id, context)
+        if self.check_no_neighbors(neighbors):
             new_state.set("active", False)
             return (new_state, [])
 
@@ -237,18 +238,6 @@ class ItaiIsraeliMaximalMatching(MatchingAlgorithm):
         )
 
     def check_termination(self, state_store: StateStore, round_num: RoundNumber, messages_sent: int) -> Tuple[bool, str | None]:
-        """Check if algorithm has converged."""
-        all_states = state_store.get_all_states()
-        active_nodes = sum(1 for state in all_states.values() if state.get("active"))
-
-        if active_nodes == 0:
-            return True, "all_nodes_inactive"
-
-        if messages_sent == 0 and round_num > RoundNumber(0):
-            return True, "no_progress"
-
+        """Check if algorithm has converged (uses common termination logic)."""
         max_rounds = self.metadata.properties.get("max_rounds", 200) if self.metadata.properties else 200
-        if round_num > RoundNumber(max_rounds):
-            return True, "max_rounds_exceeded"
-
-        return False, None
+        return self.check_default_termination(state_store, round_num, messages_sent, max_rounds)

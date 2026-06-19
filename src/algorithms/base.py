@@ -23,7 +23,16 @@ class AlgorithmMetadata:
 
 
 class MatchingAlgorithm(ABC):
-    """Abstract base class for matching algorithms."""
+    """
+    Abstract base class for distributed matching algorithms.
+
+    Provides common functionality for:
+    - Matching extraction and validation
+    - Termination checking
+    - Helper methods for message filtering and neighbor selection
+    """
+
+    # ===== ABSTRACT METHODS (Must implement) =====
 
     @abstractmethod
     def initialize_state(
@@ -149,3 +158,61 @@ class MatchingAlgorithm(ABC):
                     return False
 
         return True
+
+    # ===== COMMON HELPER METHODS =====
+
+    def get_active_neighbors(self, node_id: int, context) -> List[int]:
+        """
+        Get unmatched neighbors of a node (common to all algorithms).
+
+        Returns:
+            List of neighbor IDs that are currently unmatched
+        """
+        return list(
+            context.graph.neighbors(node_id, state_store=context.state_store, filter_active=True)
+        )
+
+    def check_no_neighbors(self, neighbors: List[int]) -> bool:
+        """Check if node has no active neighbors."""
+        return len(neighbors) == 0
+
+    def check_default_termination(
+        self,
+        state_store: StateStore,
+        round_num: RoundNumber,
+        messages_sent: int,
+        max_rounds: int,
+    ) -> Tuple[bool, str | None]:
+        """
+        Check termination using standard criteria (common to all algorithms).
+
+        Terminates if:
+        1. All nodes are inactive (matched or no neighbors)
+        2. No progress (no messages sent after round 0)
+        3. Max rounds exceeded
+
+        Args:
+            state_store: Current node states
+            round_num: Current round number
+            messages_sent: Messages sent this round
+            max_rounds: Maximum allowed rounds
+
+        Returns:
+            Tuple of (should_terminate, reason)
+        """
+        all_states = state_store.get_all_states()
+
+        # Check if all nodes are inactive or matched
+        active_nodes = sum(1 for state in all_states.values() if state.get("active"))
+        if active_nodes == 0:
+            return True, "all_nodes_inactive"
+
+        # Check for convergence: no messages sent
+        if messages_sent == 0 and round_num > RoundNumber(0):
+            return True, "no_progress"
+
+        # Check max rounds exceeded
+        if round_num > RoundNumber(max_rounds):
+            return True, "max_rounds_exceeded"
+
+        return False, None

@@ -57,7 +57,7 @@ class LubyRandomizedMatching(MatchingAlgorithm):
         for node_id in graph.vertices():
             state = state_store.get_node_state(node_id)
             state.set("matched_to", None)
-            state.set("is_active", True)
+            state.set("active", True)
             state.set("proposal_to", None)
             state.set("proposal_weight", None)
             state.set("has_neighbors", graph.degree(node_id) > 0)
@@ -75,16 +75,16 @@ class LubyRandomizedMatching(MatchingAlgorithm):
         """
         new_state = node_state.clone()
 
-        # If already matched, stay inactive
+        # If already matched, stay inactive (common to all algorithms)
         if new_state.is_matched():
             new_state.set("is_active", False)
             return (new_state, [])
 
         out_messages: List[Message] = []
-        neighbors = list(context.graph.neighbors(node_id))
+        neighbors = self.get_active_neighbors(node_id, context)
 
-        # No neighbors -> become inactive
-        if not neighbors:
+        # No neighbors -> become inactive (common to all algorithms)
+        if self.check_no_neighbors(neighbors):
             new_state.set("is_active", False)
             return (new_state, out_messages)
 
@@ -231,24 +231,9 @@ class LubyRandomizedMatching(MatchingAlgorithm):
     def check_termination(
         self, state_store: StateStore, round_num: RoundNumber, messages_sent: int
     ) -> Tuple[bool, str | None]:
-        """Check if algorithm has converged."""
-        all_states = state_store.get_all_states()
-        active_nodes = sum(1 for state in all_states.values() if state.get("is_active"))
-
-        # Check if all nodes are either matched or inactive
-        if active_nodes == 0:
-            return True, "all_nodes_inactive"
-
-        # Check for convergence: no messages sent
-        if messages_sent == 0 and round_num > RoundNumber(0):
-            return True, "no_progress"
-
-        # Check max rounds exceeded
+        """Check if algorithm has converged (uses common termination logic)."""
         max_rounds = self.metadata.properties.get("max_rounds", 200) if self.metadata.properties else 200
-        if round_num > RoundNumber(max_rounds):
-            return True, "max_rounds_exceeded"
-
-        return False, None
+        return self.check_default_termination(state_store, round_num, messages_sent, max_rounds)
 
     def extract_matching(self, state_store: StateStore, graph) -> dict:
         """Extract final matching from state store."""
