@@ -10,23 +10,23 @@ All nodes execute in lock-step synchronized rounds:
 
 Protocol (3-Phase to Ensure Symmetric Matching):
 
-**Phase 1: BID**
-1. Each round, unmatched nodes bid to their best neighbor (by weight, then edge for tie break)
-2. Send BID message to best neighbor
+**Phase 1: PROPOSE**
+1. Each round, unmatched nodes propose to their best neighbor (by weight, then edge for tie break)
+2. Send PROPOSE message to best neighbor
 
-**Phase 2: BID_ACK (Acknowledge Mutual Bid)**
-3. Node receives BIDs from other nodes
-4. If best neighbor also bid to me: send BID_ACK to accept mutual bid (but don't match yet!)
-5. Record the BID_ACK as "proposed match pending"
+**Phase 2: ACCEPT (Acknowledge Mutual Proposal)**
+3. Node receives PROPOSEs from other nodes
+4. If best neighbor also proposed to me: send ACCEPT to confirm mutual proposal (but don't match yet!)
+5. Record the ACCEPT as "confirmed proposal pending"
 
-**Phase 3: MATCH (Confirm Both Saw Mutual Agreement)**
-6. Receive BID_ACKs from other nodes
-7. If partner sent BID_ACK: both nodes know about mutual agreement
+**Phase 3: CONFIRM (Finalize Mutual Agreement)**
+6. Receive ACCEPTs from other nodes
+7. If partner sent ACCEPT: both nodes have confirmed mutual agreement
 8. Now finalize match by setting matched_to
 
 Why 3 phases?
 - Prevents "half-matches" where one node thinks it matched but the other doesn't
-- Ensures both nodes see the mutual BID before either changes state
+- Ensures both nodes see the mutual PROPOSE before either changes state
 - In synchronous rounds: Phase 1 sends, Phase 2 acks, Phase 3 finalizes
 - Guarantees symmetric matching
 
@@ -76,10 +76,10 @@ class GreedyMatching(MatchingAlgorithm):
         for node_id in graph.vertices():
             state = state_store.get_node_state(node_id)
             state.set("matched_to", None)
-            state.set("bid_to", None)  # Phase 1: Who we bid to
-            state.set("bid_weight", None)  # Phase 1: Weight of our bid
-            state.set("bid_ack_to", None)  # Phase 2: Sent BID_ACK to this node (pending confirmation)
-            state.set("bid_ack_confirmed", False)  # Phase 3: Received BID_ACK back?
+            state.set("proposal_to", None)  # Phase 1: Who we proposed to
+            state.set("proposal_weight", None)  # Phase 1: Weight of our proposal
+            state.set("accept_from", None)  # Phase 2: Sent ACCEPT to this node (pending confirmation)
+            state.set("accept_confirmed", False)  # Phase 3: Received ACCEPT back?
             state.set("active", graph.degree(node_id) > 0)
             state.set("matched_edges", [])  # Track matched edges
             state_store.update_node_state(node_id, state)
@@ -89,9 +89,9 @@ class GreedyMatching(MatchingAlgorithm):
     ) -> Tuple:
         """
         Greedy distributed matching algorithm (3-phase):
-        Phase 1: Each unmatched node sends BID to best neighbor
-        Phase 2: If best neighbor also bid to us, send BID_ACK
-        Phase 3: If we receive BID_ACK from partner, finalize match
+        Phase 1: Each unmatched node sends PROPOSE to best neighbor
+        Phase 2: If best neighbor also bid to us, send PROPOSE_ACK
+        Phase 3: If we receive PROPOSE_ACK from partner, finalize match
         """
         new_state = node_state.clone()
 
@@ -110,16 +110,16 @@ class GreedyMatching(MatchingAlgorithm):
 
         out_messages: List[Message] = []
 
-        # PHASE 3: Check if partner sent BID_ACK (finalize match)
-        bid_acks = [msg for msg in messages if msg.payload.get("type") == "BID_ACK"]
-        bid_ack_from = new_state.get("bid_ack_to")  # Who we sent BID_ACK to
+        # PHASE 3: Check if partner sent PROPOSE_ACK (finalize match)
+        bid_acks = [msg for msg in messages if msg.payload.get("type") == "PROPOSE_ACK"]
+        bid_ack_from = new_state.get("accept_from")  # Who we sent PROPOSE_ACK to
         if bid_ack_from and any(msg.sender == bid_ack_from for msg in bid_acks):
             # Partner confirmed! Finalize match
             new_state = self.stage_finalize_match(new_state, node_id, bid_ack_from)
             return (new_state, [])
 
-        # PHASE 2: Check for mutual BIDs and send BID_ACK if mutual
-        received_bids = [msg for msg in messages if msg.payload.get("type") == "BID"]
+        # PHASE 2: Check for mutual PROPOSEs and send PROPOSE_ACK if mutual
+        received_bids = [msg for msg in messages if msg.payload.get("type") == "PROPOSE"]
 
         # PHASE 1: Find best neighbor to bid to
         best_neighbor, best_weight, best_edge = self._find_best_neighbor(neighbors, node_id, context)
@@ -128,22 +128,22 @@ class GreedyMatching(MatchingAlgorithm):
             new_state.set("active", False)
             return (new_state, [])
 
-        # Send BID to best neighbor
-        new_state.set("bid_to", best_neighbor)
-        new_state.set("bid_weight", best_weight)
+        # Send PROPOSE to best neighbor
+        new_state.set("proposal_to", best_neighbor)
+        new_state.set("proposal_weight", best_weight)
         new_state.set("active", True)
         out_messages.append(self.stage_send_bid(node_id, best_neighbor, best_weight, context))
 
         # Check if best neighbor also bid to us (mutual bid)
         if received_bids and any(bid.sender == best_neighbor for bid in received_bids):
-            # Mutual BID detected! Send BID_ACK (don't match yet)
-            new_state.set("bid_ack_to", best_neighbor)
-            new_state.set("bid_ack_confirmed", False)
+            # Mutual PROPOSE detected! Send PROPOSE_ACK (don't match yet)
+            new_state.set("accept_from", best_neighbor)
+            new_state.set("accept_confirmed", False)
             out_messages.append(
                 Message(
                     sender=node_id,
                     recipient=best_neighbor,
-                    payload={"type": "BID_ACK"},
+                    payload={"type": "PROPOSE_ACK"},
                     round_num=context.round_num,
                 )
             )
@@ -153,12 +153,12 @@ class GreedyMatching(MatchingAlgorithm):
     # ===== Helper Methods for Stage Operations =====
 
     def stage_send_bid(self, node_id: int, best_neighbor: int, best_weight: float, context) -> Message:
-        """Send BID to best neighbor."""
+        """Send PROPOSE to best neighbor."""
         return Message(
             sender=node_id,
             recipient=best_neighbor,
             payload={
-                "type": "BID",
+                "type": "PROPOSE",
                 "weight": best_weight,
                 "bidder_id": node_id,
             },
@@ -166,14 +166,14 @@ class GreedyMatching(MatchingAlgorithm):
         )
 
     def stage_finalize_match(self, new_state, node_id: int, partner: int):
-        """Finalize match after both nodes sent BID_ACK."""
-        weight = new_state.get("bid_weight")
+        """Finalize match after both nodes sent PROPOSE_ACK."""
+        weight = new_state.get("proposal_weight")
         new_state.set_matched_to(partner)
         new_state.set("active", False)
-        new_state.set("bid_to", None)
-        new_state.set("bid_weight", None)
-        new_state.set("bid_ack_to", None)
-        new_state.set("bid_ack_confirmed", True)
+        new_state.set("proposal_to", None)
+        new_state.set("proposal_weight", None)
+        new_state.set("accept_from", None)
+        new_state.set("accept_confirmed", True)
 
         # Record matched edge
         matched_edge = MatchedEdge(
