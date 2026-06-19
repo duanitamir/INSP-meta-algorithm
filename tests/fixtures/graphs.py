@@ -68,8 +68,176 @@ STAR_WITH_TAIL = {
     ],
 }
 
+# Graph 4: Random Dense Graph (1000 nodes)
+def _create_random_dense_graph():
+    """Generate random dense graph with ~1000 nodes and ~5000 edges."""
+    import random
+    random.seed(42)
+
+    vertices = list(range(1, 1001))
+    edges = []
+
+    # Create connected backbone first (ensures connectivity)
+    for i in range(len(vertices) - 1):
+        u, v = vertices[i], vertices[i + 1]
+        weight = random.randint(1, 100)
+        edges.append((u, v, weight))
+
+    # Add random edges to increase density
+    target_edges = 5000
+    while len(edges) < target_edges:
+        u = random.choice(vertices)
+        v = random.choice(vertices)
+        if u != v and (min(u, v), max(u, v)) not in {(min(a, b), max(a, b)) for a, b, _ in edges}:
+            weight = random.randint(1, 100)
+            edges.append((u, v, weight))
+
+    # Calculate approximate optimal weight (rough estimate)
+    # For random graphs, maximal matching ≈ n/2 * avg_weight
+    avg_weight = sum(w for _, _, w in edges) / len(edges)
+    optimal_weight = int(500 * avg_weight)
+
+    return {
+        "name": "Random Dense Graph (1000 nodes)",
+        "vertices": vertices,
+        "edges": edges,
+        "optimal_weight": optimal_weight,
+        "best_matches": [],  # Unknown for random graph
+    }
+
+RANDOM_DENSE_GRAPH_1K = _create_random_dense_graph()
+
+# Graph 5: Clustered Graph with Communities (1000 nodes)
+def _create_clustered_graph():
+    """Generate clustered graph with 10 communities of ~100 nodes each."""
+    import random
+    random.seed(43)
+
+    vertices = list(range(1, 1001))
+    edges = []
+    num_communities = 10
+    community_size = 100
+
+    # Create dense communities
+    for c in range(num_communities):
+        start = c * community_size + 1
+        end = (c + 1) * community_size + 1
+        community_nodes = list(range(start, end))
+
+        # Add edges within community (high weight)
+        for i in range(len(community_nodes)):
+            for j in range(i + 1, min(i + 5, len(community_nodes))):  # Each node connects to ~5 others
+                u, v = community_nodes[i], community_nodes[j]
+                weight = random.randint(50, 100)
+                edges.append((u, v, weight))
+
+    # Add sparse inter-community edges (low weight)
+    for c1 in range(num_communities):
+        for c2 in range(c1 + 1, num_communities):
+            u = random.randint(c1 * community_size + 1, (c1 + 1) * community_size)
+            v = random.randint(c2 * community_size + 1, (c2 + 1) * community_size)
+            weight = random.randint(1, 20)
+            edges.append((u, v, weight))
+
+    # Approximate optimal: ~50 nodes per community match internally at high weight
+    optimal_weight = int(num_communities * 25 * 75)  # Rough estimate
+
+    return {
+        "name": "Clustered Graph with Communities (1000 nodes)",
+        "vertices": vertices,
+        "edges": list(set(edges)),  # Remove duplicates
+        "optimal_weight": optimal_weight,
+        "best_matches": [],
+    }
+
+CLUSTERED_GRAPH_1K = _create_clustered_graph()
+
+# Graph 6: Scale-Free Graph (1000 nodes, power-law degree distribution)
+def _create_scale_free_graph():
+    """Generate scale-free graph using preferential attachment."""
+    import random
+    random.seed(44)
+
+    vertices = list(range(1, 1001))
+    edges = []
+    degrees = {v: 0 for v in vertices}
+
+    # Start with a small connected core
+    core = vertices[:10]
+    for i in range(len(core)):
+        for j in range(i + 1, len(core)):
+            u, v = core[i], core[j]
+            weight = random.randint(10, 100)
+            edges.append((u, v, weight))
+            degrees[u] += 1
+            degrees[v] += 1
+
+    # Preferential attachment: new nodes connect to high-degree nodes
+    for new_node in vertices[10:]:
+        # Select k nodes based on current degrees (preferential attachment)
+        k = min(5, len(vertices) - 1)
+        candidates = random.choices(vertices[:vertices.index(new_node)],
+                                   weights=[degrees[v] + 1 for v in vertices[:vertices.index(new_node)]],
+                                   k=k)
+
+        for target in set(candidates):
+            if target != new_node:
+                weight = random.randint(1, 100)
+                edges.append((min(new_node, target), max(new_node, target), weight))
+                degrees[new_node] += 1
+                degrees[target] += 1
+
+    # Remove duplicate edges
+    edges = list(set(edges))
+
+    # Hubs in scale-free networks have degree ~sqrt(n), expect ~20-30 high-degree nodes
+    # Optimal matching exploits hubs: ~5-10 hub matches at high weight
+    optimal_weight = int(10 * 50)  # Rough: 10 hub pairs at avg 50 weight
+
+    return {
+        "name": "Scale-Free Graph (1000 nodes, power-law)",
+        "vertices": vertices,
+        "edges": edges,
+        "optimal_weight": optimal_weight,
+        "best_matches": [],
+    }
+
+SCALE_FREE_GRAPH_1K = _create_scale_free_graph()
+
+# Graph 7: Bipartite Graph (1000 nodes, two sides of 500 each)
+def _create_bipartite_graph():
+    """Generate complete bipartite graph K(500,500) with random weights."""
+    import random
+    random.seed(45)
+
+    left_nodes = list(range(1, 501))
+    right_nodes = list(range(501, 1001))
+    vertices = left_nodes + right_nodes
+    edges = []
+
+    # Connect each left node to ~10 random right nodes
+    for u in left_nodes:
+        targets = random.sample(right_nodes, k=min(10, len(right_nodes)))
+        for v in targets:
+            weight = random.randint(1, 100)
+            edges.append((u, v, weight))
+
+    # Perfect matching possible: 500 pairs at various weights
+    avg_weight = sum(w for _, _, w in edges) / len(edges)
+    optimal_weight = int(500 * avg_weight)
+
+    return {
+        "name": "Bipartite Graph (500+500 nodes)",
+        "vertices": vertices,
+        "edges": edges,
+        "optimal_weight": optimal_weight,
+        "best_matches": [],
+    }
+
+BIPARTITE_GRAPH_1K = _create_bipartite_graph()
+
 # Easy access
-GRAPHS = [GRID_4x4, K5_CLUSTERS, STAR_WITH_TAIL]
+GRAPHS = [GRID_4x4, K5_CLUSTERS, STAR_WITH_TAIL, RANDOM_DENSE_GRAPH_1K, CLUSTERED_GRAPH_1K, SCALE_FREE_GRAPH_1K, BIPARTITE_GRAPH_1K]
 
 
 def get_graph(name):
