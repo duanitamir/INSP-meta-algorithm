@@ -23,11 +23,9 @@ class Scheduler:
             self.algorithm = None
             self.config = config or SimulationConfig()
         elif isinstance(algorithm_or_config, SimulationConfig):
-            # Old API: Scheduler(graph, config)
             self.algorithm = None
             self.config = algorithm_or_config
         else:
-            # New API: Scheduler(graph, algorithm, config)
             self.algorithm = algorithm_or_config
             self.config = config or SimulationConfig()
         self.state_store = StateStore(graph)

@@ -1,14 +1,39 @@
 """
 Itai-Israeli Distributed Maximal Matching Algorithm
 
-FINAL VERSION: Three-message protocol (PROPOSE -> ACCEPT -> CONFIRM)
-- 100% validity guaranteed
-- Timeout after N rounds: retry with different neighbor (args parameter)
-- Provides both rejection handling and timeout retrying
+Execution Model: SYNCHRONOUS ROUNDS
+All nodes execute in lock-step synchronized rounds:
+- Round 1: All nodes execute node_behavior() simultaneously with messages from Round 0
+- Update barrier: All state changes applied atomically at end of round
+- Message delivery: All messages queued during round delivered for next round
+- Each node sees consistent global state for its round (messages from previous round)
+
+Protocol (Three-Message Exchange):
+1. Each unmatched node sends PROPOSE to the best (highest weight) unmatched neighbor
+2. Receiver accepts the BEST incoming proposal (highest weight, ties broken by sender ID)
+   - If already negotiating with someone, compares new proposal to current one
+   - If new proposal is better: silently drops current partner and accepts the new one (no rejection sent)
+   - If new proposal is worse: IGNORES it and continues with current negotiation
+3. Receiver sends ACCEPT back to proposer
+4. Proposer receives ACCEPT, sends CONFIRM to finalize match - both now matched and inactive
+5. If no response after timeout_rounds, reset negotiation and retry with best unmatched neighbor
+   - Note: May be same or different neighbor depending on current graph state (other nodes may have matched)
+6. Continue until no active nodes or no progress
+
+Proposal Switching Logic:
+- A receiver may switch partners mid-negotiation if it receives a better proposal
+- Switch is SILENT: no explicit rejection sent to abandoned partner (timeout will reset them)
+- Comparison: weight-based (higher is better), then by sender ID for ties
+- This allows nodes to adapt to higher-quality opportunities dynamically
+- Abandoned partners eventually timeout and seek new neighbors
+
+Message Types:
+- PROPOSE: unmatched node proposes to neighbor (weight included)
+- ACCEPT: receiver agrees to match
+- CONFIRM: proposer confirms match established
 """
 
 from typing import List, Tuple
-import random
 from src.algorithms.base import MatchingAlgorithm, AlgorithmMetadata
 from src.state.state_store import StateStore
 from src.communication.message import Message
@@ -18,11 +43,8 @@ from src.utils.types import RoundNumber
 class ItaiIsraeliMaximalMatching(MatchingAlgorithm):
     """Itai-Israeli Distributed Maximal Matching Algorithm."""
 
-    def __init__(self, seed: int | None = None, timeout_rounds: int = 5):
-        self.seed = seed
+    def __init__(self, timeout_rounds: int = 5):
         self.timeout_rounds = timeout_rounds
-        if seed is not None:
-            random.seed(seed)
 
         self._metadata = AlgorithmMetadata(
             name="Itai-Israeli Distributed Maximal Matching",
@@ -34,8 +56,6 @@ class ItaiIsraeliMaximalMatching(MatchingAlgorithm):
                 "produces_maximal": True,
                 "produces_maximum": False,
                 "deterministic": True,
-                "round_complexity": "O(log n)",
-                "message_complexity": "O(m log n)",
                 "max_rounds": 200,
                 "timeout_rounds": timeout_rounds,
             },
@@ -59,98 +79,155 @@ class ItaiIsraeliMaximalMatching(MatchingAlgorithm):
             state_store.update_node_state(node_id, state)
 
     def node_behavior(self, node_id: int, node_state, messages: List[Message], context) -> Tuple:
-        """Three-message protocol with timeout retrying"""
         new_state = node_state.clone()
 
         if new_state.is_matched():
             new_state.set("active", False)
             return (new_state, [])
 
-        out_messages: List[Message] = []
-        neighbors = list(context.graph.neighbors(node_id))
+        # Get only active (unmatched) neighbors to avoid proposals to matched nodes
+        neighbors = list(context.graph.neighbors(node_id, state_store=context.state_store, filter_active=True))
         if not neighbors:
             new_state.set("active", False)
-            return (new_state, out_messages)
+            return (new_state, [])
 
+        # Parse incoming messages by type
+        confirms = [msg.sender for msg in messages if msg.payload.get("type") == "CONFIRM"]
+        accepts = [msg.sender for msg in messages if msg.payload.get("type") == "ACCEPT"]
+
+        # Get current negotiation state
         partner = new_state.get("negotiation_partner")
         stage = new_state.get("negotiation_stage")
+
+        # Stages 1 & 2: Process CONFIRM and ACCEPT messages (if we have a partner)
+        if partner:
+            out_messages = []
+            # Process CONFIRM messages (final matching stage)
+            if partner in confirms and stage == "accepted":
+                new_state = self.stage_confirm(new_state, partner)
+            # Process ACCEPT messages (send CONFIRM) - only if no CONFIRM received
+            elif partner in accepts and stage == "proposed":
+                out_messages = self.stage_accept(partner, node_id, context)
+                new_state = self._match_nodes(new_state, partner)
+
+            # If matched, return early (don't process other stages)
+            if new_state.is_matched():
+                return (new_state, out_messages)
+
+        # Check for timeout and reset if needed
+        new_state, partner = self.stage_timeout(new_state, partner)
+
+        # Process incoming PROPOSE from other nodes
+        proposes = [msg for msg in messages if msg.payload.get("type") == "PROPOSE"]
+        if proposes:
+            best = self._find_best_propose(proposes)
+            best_weight = best.payload.get("weight", 0)
+            current_weight = new_state.get("last_bid_weight", -1) if partner else -1
+
+            if not partner or best_weight > current_weight or (best_weight == current_weight and best.sender > partner):
+                out_messages = self.stage_accept_propose(best.sender, node_id, context)
+                new_state = self._match_nodes(new_state, best.sender)
+                return (new_state, out_messages)
+
+        # Generate new PROPOSE if not currently negotiating
+        # After timeout, retry with best neighbor from CURRENT graph state
+        # (other nodes may have matched since we last tried)
+        if not partner:
+            out_messages = self.stage_generate_propose(neighbors, node_id, context)
+            new_state = self._start_negotiation(new_state, out_messages[0].recipient, "proposed")
+            return (new_state, out_messages)
+        else:
+            # Already negotiating, increment timeout counter
+            stage_round = new_state.get("stage_round", 0)
+            new_state.set("stage_round", stage_round + 1)
+            new_state.set("active", True)
+            return (new_state, [])
+
+    # ===== Helper Methods for Stage Operations =====
+
+    def stage_confirm(self, new_state, partner):
+        """Match confirmed by partner - finalize the match."""
+        return self._match_nodes(new_state, partner)
+
+    def stage_accept(self, partner, node_id, context):
+        """Send CONFIRM to partner after receiving ACCEPT."""
+        return [Message(
+            sender=node_id,
+            recipient=partner,
+            payload={"type": "CONFIRM"},
+            round_num=context.round_num,
+        )]
+
+    def stage_timeout(self, new_state, partner):
+        """Check if negotiation has timed out and reset if needed."""
         stage_round = new_state.get("stage_round", 0)
 
-        proposes = [msg.sender for msg in messages if msg.payload.get("type") == "PROPOSE"]
-        accepts = [msg.sender for msg in messages if msg.payload.get("type") == "ACCEPT"]
-        confirms = [msg.sender for msg in messages if msg.payload.get("type") == "CONFIRM"]
-
-        # If CONFIRM from partner, we match!
-        if partner and partner in confirms and stage == "accepted":
-            new_state.set_matched_to(partner)
-            new_state.set("status", "matched")
-            new_state.set("active", False)
-            new_state.set("negotiation_partner", None)
-            new_state.set("negotiation_stage", None)
-            new_state.set("stage_round", 0)
-            return (new_state, out_messages)
-
-        # If ACCEPT to our PROPOSE, send CONFIRM and match
-        if partner and partner in accepts and stage == "proposed":
-            new_state.set_matched_to(partner)
-            new_state.set("status", "matched")
-            new_state.set("active", False)
-            new_state.set("negotiation_partner", None)
-            new_state.set("negotiation_stage", None)
-            new_state.set("stage_round", 0)
-            out_messages.append(Message(
-                sender=node_id,
-                recipient=partner,
-                payload={"type": "CONFIRM"},
-                round_num=context.round_num,
-            ))
-            return (new_state, out_messages)
-
-        # Timeout: if stuck in same stage too long, give up and try new neighbor
         if partner and stage_round >= self.timeout_rounds:
             new_state.set("negotiation_partner", None)
             new_state.set("negotiation_stage", None)
             new_state.set("stage_round", 0)
             partner = None
 
-        # If we get PROPOSE, accept best if not negotiating
-        if proposes:
-            best = max(proposes)
-            if not partner or best > partner:
-                new_state.set_matched_to(best)  # Accept proposal = immediate match
-                new_state.set("status", "matched")
-                new_state.set("negotiation_partner", best)
-                new_state.set("negotiation_stage", "accepted")
-                new_state.set("stage_round", 0)
-                new_state.set("active", False)
-                out_messages.append(Message(
-                    sender=node_id,
-                    recipient=best,
-                    payload={"type": "ACCEPT"},
-                    round_num=context.round_num,
-                ))
-                return (new_state, out_messages)
+        return (new_state, partner)
 
-        # If not negotiating, send PROPOSE
-        if not partner:
-            target = random.choice(neighbors)
-            new_state.set("negotiation_partner", target)
-            new_state.set("negotiation_stage", "proposed")
-            new_state.set("status", "proposing")
-            new_state.set("stage_round", 0)
-            new_state.set("active", True)
-            out_messages.append(Message(
-                sender=node_id,
-                recipient=target,
-                payload={"type": "PROPOSE"},
-                round_num=context.round_num,
-            ))
-        else:
-            # Increment stage counter
-            new_state.set("stage_round", stage_round + 1)
-            new_state.set("active", True)
+    def stage_accept_propose(self, proposer_id, node_id, context):
+        """Accept incoming PROPOSE and send ACCEPT."""
+        return [Message(
+            sender=node_id,
+            recipient=proposer_id,
+            payload={"type": "ACCEPT"},
+            round_num=context.round_num,
+        )]
 
-        return (new_state, out_messages)
+    def stage_generate_propose(self, neighbors, node_id, context):
+        """Generate PROPOSE to best (highest weight) neighbor."""
+        best_neighbor = None
+        best_weight = -1
+
+        for neighbor in neighbors:
+            weight = context.graph.get_edge_weight(node_id, neighbor)
+            if weight > best_weight:
+                best_weight = weight
+                best_neighbor = neighbor
+
+        return [Message(
+            sender=node_id,
+            recipient=best_neighbor,
+            payload={
+                "type": "PROPOSE",
+                "weight": best_weight,
+                "proposer_id": node_id,
+            },
+            round_num=context.round_num,
+        )]
+
+    # ===== Private Helper Methods =====
+
+    def _match_nodes(self, new_state, partner):
+        """Finalize match between nodes."""
+        new_state.set_matched_to(partner)
+        new_state.set("status", "matched")
+        new_state.set("active", False)
+        new_state.set("negotiation_partner", None)
+        new_state.set("negotiation_stage", None)
+        new_state.set("stage_round", 0)
+        return new_state
+
+    def _start_negotiation(self, new_state, partner, stage):
+        """Start negotiation with a new partner."""
+        new_state.set("negotiation_partner", partner)
+        new_state.set("negotiation_stage", stage)
+        new_state.set("status", "proposing" if stage == "proposed" else "accepting")
+        new_state.set("stage_round", 0)
+        new_state.set("active", True)
+        return new_state
+
+    def _find_best_propose(self, proposes):
+        """Find the best PROPOSE by weight and proposer_id."""
+        return max(
+            proposes,
+            key=lambda m: (m.payload.get("weight", 0), m.payload.get("proposer_id", m.sender))
+        )
 
     def check_termination(self, state_store: StateStore, round_num: RoundNumber, messages_sent: int) -> Tuple[bool, str | None]:
         """Check if algorithm has converged."""

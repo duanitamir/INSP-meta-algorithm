@@ -8,7 +8,7 @@ from src.visualization import GraphVisualizer
 class TestItaiIsraeliIntegration:
     def test_simple_graph_simulation(self, simple_graph):
         """Test Itai-Israeli on a simple path graph."""
-        algo = ItaiIsraeliMaximalMatching(seed=42)
+        algo = ItaiIsraeliMaximalMatching()
         config = SimulationConfig(max_rounds=50)
         scheduler = Scheduler(simple_graph, algo, config)
 
@@ -21,7 +21,7 @@ class TestItaiIsraeliIntegration:
     @pytest.mark.skip(reason="Known limitation: Protocol can produce asymmetry on some graphs")
     def test_matching_correctness(self, simple_graph):
         """Test that algorithm produces a valid maximal matching."""
-        algo = ItaiIsraeliMaximalMatching(seed=42)
+        algo = ItaiIsraeliMaximalMatching()
         scheduler = Scheduler(simple_graph, algo)
 
         scheduler.run_until_termination()
@@ -35,7 +35,7 @@ class TestItaiIsraeliIntegration:
 
     def test_matching_metrics(self, simple_graph):
         """Test that metrics are collected."""
-        algo = ItaiIsraeliMaximalMatching(seed=42)
+        algo = ItaiIsraeliMaximalMatching()
         scheduler = Scheduler(simple_graph, algo)
 
         rounds = scheduler.run_until_termination()
@@ -51,12 +51,12 @@ class TestItaiIsraeliIntegration:
 
     def test_determinism(self, simple_graph):
         """Test that algorithm is deterministic with same seed."""
-        algo1 = ItaiIsraeliMaximalMatching(seed=42)
+        algo1 = ItaiIsraeliMaximalMatching()
         scheduler1 = Scheduler(simple_graph, algo1)
         rounds1 = scheduler1.run_until_termination()
         matching1 = scheduler1.final_matching
 
-        algo2 = ItaiIsraeliMaximalMatching(seed=42)
+        algo2 = ItaiIsraeliMaximalMatching()
         scheduler2 = Scheduler(simple_graph, algo2)
         rounds2 = scheduler2.run_until_termination()
         matching2 = scheduler2.final_matching
@@ -76,7 +76,7 @@ class TestItaiIsraeliIntegration:
 
     def test_visualization_rendering(self, simple_graph):
         """Test that visualization works with final matching."""
-        algo = ItaiIsraeliMaximalMatching(seed=42)
+        algo = ItaiIsraeliMaximalMatching()
         scheduler = Scheduler(simple_graph, algo)
 
         scheduler.run_until_termination()
@@ -90,7 +90,7 @@ class TestItaiIsraeliIntegration:
 
     def test_state_snapshots(self, simple_graph):
         """Test that state snapshots are created."""
-        algo = ItaiIsraeliMaximalMatching(seed=42)
+        algo = ItaiIsraeliMaximalMatching()
         config = SimulationConfig(collect_snapshots=True)
         scheduler = Scheduler(simple_graph, algo, config)
 
@@ -101,7 +101,7 @@ class TestItaiIsraeliIntegration:
 
     def test_convergence_with_callback(self, simple_graph):
         """Test custom termination callback."""
-        algo = ItaiIsraeliMaximalMatching(seed=42)
+        algo = ItaiIsraeliMaximalMatching()
         scheduler = Scheduler(simple_graph, algo)
 
         max_rounds_callback = 5
