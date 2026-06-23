@@ -9,7 +9,7 @@ Each algorithm wrapper:
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Set
+from typing import Dict
 from src.meta.canonical_vector import CanonicalVector
 
 
@@ -27,19 +27,16 @@ class AlgorithmParameterizer(ABC):
     def execute(
         self,
         graph,
-        selected_nodes: Set[int],
         canonical_vector: CanonicalVector,
     ) -> Dict[int, int]:
-        """Execute algorithm on selected nodes.
+        """Execute algorithm with canonical vector parameters.
 
         Args:
             graph: GraphManager instance
-            selected_nodes: Nodes to operate on (from select_nodes())
-            canonical_vector: 17-parameter chromosome (algorithm-specific params)
+            canonical_vector: 10-parameter chromosome (algorithm-specific params)
 
         Returns:
-            Dict mapping node_id -> matched_partner (matching on selected_nodes).
-            Nodes not in selected_nodes should not appear in result.
+            Dict mapping node_id -> matched_partner (maximal matching).
         """
         pass
 

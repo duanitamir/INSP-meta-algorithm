@@ -58,7 +58,9 @@ class GraphManager:
         """Get all vertices as frozenset."""
         return frozenset(self._graph.nodes())
 
-    def neighbors(self, vertex_id: int, state_store=None, filter_active: bool = False) -> FrozenSet[int]:
+    def neighbors(
+        self, vertex_id: int, state_store=None, filter_active: bool = False
+    ) -> FrozenSet[int]:
         """Get neighbors of a vertex.
 
         Args:
@@ -81,7 +83,8 @@ class GraphManager:
 
         # Filter to only unmatched (active) neighbors
         active_neighbors = frozenset(
-            neighbor for neighbor in all_neighbors
+            neighbor
+            for neighbor in all_neighbors
             if not state_store.get_node_state(neighbor).is_matched()
         )
         return active_neighbors
@@ -121,3 +124,82 @@ class GraphManager:
     def get_connected_components(self) -> List[FrozenSet[int]]:
         """Get connected components."""
         return [frozenset(comp) for comp in nx.connected_components(self._graph)]
+
+    def get_subgraph(self, nodes: FrozenSet[int] | set) -> "GraphManager":
+        """Create a subgraph containing only specified nodes.
+
+        Args:
+            nodes: Set or FrozenSet of node IDs to include in subgraph
+
+        Returns:
+            New GraphManager containing only specified nodes and edges between them
+
+        Raises:
+            ValueError: If nodes set is empty or contains invalid node IDs
+        """
+        if not nodes:
+            raise ValueError("Cannot create subgraph with empty node set")
+
+        invalid_nodes = set(nodes) - set(self._graph.nodes())
+        if invalid_nodes:
+            raise ValueError(f"Invalid node IDs in subgraph: {invalid_nodes}")
+
+        nx_subgraph = self._graph.subgraph(nodes)
+        result = GraphManager.create_empty_graph()
+        result._graph = nx_subgraph.copy()
+        return result
+
+    def calculate_matching_weight(self, matching: Dict[int, int]) -> float:
+        """Calculate total weight of a matching.
+
+        Args:
+            matching: Dict mapping node_id -> matched_partner
+
+        Returns:
+            float: Sum of edge weights (counting each edge once)
+        """
+        total = 0.0
+        visited = set()
+
+        for u, v in matching.items():
+            if u not in visited:
+                weight = self.get_edge_weight(u, v)
+                if weight is not None:
+                    total += weight
+                visited.add(u)
+                visited.add(v)
+
+        return total
+
+    def is_matching_maximal(self, matching: Dict[int, int]) -> bool:
+        """Check if matching is maximal (no edges can be added).
+
+        Args:
+            matching: Dict mapping node_id -> matched_partner
+
+        Returns:
+            bool: True if maximal, False otherwise
+        """
+        matched_nodes = set(matching.keys())
+
+        for u in self.vertices():
+            if u in matched_nodes:
+                continue
+            for v in self.neighbors(u):
+                if v not in matched_nodes:
+                    return False
+
+        return True
+
+    @staticmethod
+    def normalize_edge(u: int, v: int) -> tuple:
+        """Normalize edge representation to canonical form (smaller, larger).
+
+        Args:
+            u: First node ID
+            v: Second node ID
+
+        Returns:
+            tuple: (min(u, v), max(u, v)) for consistent edge representation
+        """
+        return (u, v) if u < v else (v, u)
