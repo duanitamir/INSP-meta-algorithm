@@ -35,11 +35,12 @@ class ItaiParameterizer(AlgorithmParameterizer):
         if not is_valid:
             raise ValueError(f"Invalid canonical vector: {error}")
 
-        # Create Itai-Israeli algorithm
-        itai = ItaiIsraeliMaximalMatching()
+        # Create Itai-Israeli algorithm with timeout from canonical vector
+        timeout = canonical_vector.itai_timeout_rounds
+        itai = ItaiIsraeliMaximalMatching(timeout_rounds=timeout)
 
-        # Create scheduler with algorithm
-        config = SimulationConfig(max_rounds=100)
+        # Create scheduler with algorithm using max_iterations from canonical vector
+        config = SimulationConfig(max_rounds=int(canonical_vector.max_iterations))
         scheduler = Scheduler(graph, itai, config)
 
         # Run scheduler until termination

@@ -22,6 +22,32 @@ class CascadingLoop:
         """
         self.conflict_resolver = conflict_resolver
 
+    def _is_maximal_matching(
+        self, matching: Dict[int, int], graph: GraphManager
+    ) -> bool:
+        """Check if matching is truly maximal (no more edges can be added).
+
+        Args:
+            matching: Symmetric matching dictionary (u -> v and v -> u present)
+            graph: GraphManager with vertices and edges
+
+        Returns:
+            bool: True if matching is maximal, False if more edges can be added
+        """
+        matched_nodes = set(matching.keys())
+        unmatched_nodes = graph.vertices() - matched_nodes
+
+        if len(unmatched_nodes) < 2:
+            return True
+
+        # Check if any edge exists between unmatched nodes
+        for u in unmatched_nodes:
+            for v in unmatched_nodes:
+                if u < v and graph._graph.has_edge(u, v):
+                    return False
+
+        return True
+
     def execute(
         self,
         graph: GraphManager,
@@ -98,11 +124,27 @@ class CascadingLoop:
             # Add new matches to cumulative result
             all_matched.update(merged)
 
-            # Check if maximal matching on remaining graph
-            if working_graph.is_matching_maximal(merged):
+            previous_weight = current_weight
+
+        # Guarantee maximal matching: if not maximal, run recovery iteration
+        # Also try additional iterations even if convergence threshold met, to find remaining edges
+        remaining_nodes = frozenset(graph.vertices() - frozenset(all_matched.keys()))
+        while len(remaining_nodes) >= 2 and not self._is_maximal_matching(all_matched, graph):
+            working_graph = graph.get_subgraph(remaining_nodes)
+            matchings = [param.execute(working_graph, canonical_vector) for param in parameterizers]
+
+            if len(matchings) >= 3:
+                merged = self.conflict_resolver.resolve(
+                    matchings[0], matchings[1], matchings[2], working_graph
+                )
+            else:
+                merged = matchings[0] if matchings else {}
+
+            if not merged:  # No more edges found
                 break
 
-            previous_weight = current_weight
+            all_matched.update(merged)
+            remaining_nodes = frozenset(graph.vertices() - frozenset(all_matched.keys()))
 
         return (
             all_matched,

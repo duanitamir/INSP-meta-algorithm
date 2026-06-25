@@ -13,7 +13,7 @@ on complex graphs due to timing in the synchronous model. This is expected behav
 for this simplified randomized algorithm.
 """
 
-from typing import List, Tuple
+from typing import List, Tuple, Callable
 import random
 from src.algorithms.base import MatchingAlgorithm, AlgorithmMetadata
 from src.state.state_store import StateStore
@@ -24,9 +24,15 @@ from src.utils.types import RoundNumber
 class LubyRandomizedMatching(MatchingAlgorithm):
     """Luby-style Randomized Distributed Maximal Matching Algorithm."""
 
-    def __init__(self, seed: int | None = None, activation_probability: float = 0.5):
+    def __init__(
+        self,
+        seed: int | None = None,
+        activation_probability: float = 0.5,
+        activation_function: Callable[[int], float] | None = None,
+    ):
         self.seed = seed
         self.activation_probability = activation_probability
+        self.activation_function = activation_function
         if seed is not None:
             random.seed(seed)
 
@@ -44,6 +50,7 @@ class LubyRandomizedMatching(MatchingAlgorithm):
                 "message_complexity": "O(m log n)",
                 "max_rounds": 200,
                 "activation_probability": activation_probability,
+                "adaptive_activation": activation_function is not None,
             },
         )
 
@@ -88,8 +95,12 @@ class LubyRandomizedMatching(MatchingAlgorithm):
             new_state.set("is_active", False)
             return (new_state, out_messages)
 
-        # Decide whether to activate this round with probability p
-        should_activate = random.random() < self.activation_probability
+        # Decide whether to activate with probability p (or p_adaptive if function provided)
+        if self.activation_function is not None:
+            activation_prob = self.activation_function(node_id)
+        else:
+            activation_prob = self.activation_probability
+        should_activate = random.random() < activation_prob
         new_state.set("is_active", should_activate)
 
         # Step 1: Process CONFIRM messages - if we receive CONFIRM, match

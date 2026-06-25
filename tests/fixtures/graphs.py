@@ -108,15 +108,15 @@ def _create_random_dense_graph():
 RANDOM_DENSE_GRAPH_1K = _create_random_dense_graph()
 
 # Graph 5: Clustered Graph with Communities (1000 nodes)
-def _create_clustered_graph():
-    """Generate clustered graph with 10 communities of ~100 nodes each."""
+def _create_clustered_graph(nr_of_nudes: int = 1000, nr_communities: int = 10):
+    """Generate clustered graph with communities."""
     import random
     random.seed(43)
 
-    vertices = list(range(1, 1001))
+    vertices = list(range(1, nr_of_nudes+1))
     edges = []
-    num_communities = 10
-    community_size = 100
+    num_communities = nr_communities
+    community_size = nr_of_nudes // nr_communities  # Dynamic sizing
 
     # Create dense communities
     for c in range(num_communities):
@@ -151,6 +151,8 @@ def _create_clustered_graph():
     }
 
 CLUSTERED_GRAPH_1K = _create_clustered_graph()
+CLUSTERED_GRAPH_500 = _create_clustered_graph(nr_of_nudes=500, nr_communities=10)
+CLUSTERED_GRAPH_100 = _create_clustered_graph(nr_of_nudes=100, nr_communities=5)
 
 # Graph 6: Scale-Free Graph (1000 nodes, power-law degree distribution)
 def _create_scale_free_graph():
@@ -236,8 +238,324 @@ def _create_bipartite_graph():
 
 BIPARTITE_GRAPH_1K = _create_bipartite_graph()
 
+# Graph 8: Conflict Graph - designed for GA parameter tuning
+def _create_conflict_graph(num_hubs: int = 5, nodes_per_hub: int = 20):
+    """Generate conflict graph where Luby parameter tuning makes a difference.
+
+    Structure:
+    - Multiple hub nodes with high connectivity
+    - Hub-to-hub edges have HIGH weight (100) → conflicts!
+    - Hub-to-peripheral edges have MEDIUM weight (20)
+    - Peripheral-to-peripheral edges have LOW weight (5)
+
+    Why this matters for GA:
+    - Greedy greedily takes hub edges, blocks other hubs
+    - Itai has timeout mechanism, works OK
+    - Luby adaptive activation can strategically activate/deactivate hubs
+    - Different coefficients → different final matching weights
+    - GA can optimize: find coefficients that avoid conflicts
+    """
+    import random
+    random.seed(45)
+
+    num_hubs = num_hubs
+    nodes_per_hub = nodes_per_hub
+    total_nodes = num_hubs + (num_hubs * nodes_per_hub)
+
+    vertices = list(range(1, total_nodes + 1))
+    edges = []
+
+    hub_ids = list(range(1, num_hubs + 1))
+    peripheral_start = num_hubs + 1
+    peripheral_ids = list(range(peripheral_start, total_nodes + 1))
+
+    # Hub-to-hub edges (weight 100 - high weight conflicts)
+    for i, hub1 in enumerate(hub_ids):
+        for hub2 in hub_ids[i+1:]:
+            edges.append((hub1, hub2, 100))
+
+    # Hub-to-peripheral edges (weight 20)
+    for hub_id in hub_ids:
+        for _ in range(nodes_per_hub):
+            peripheral = peripheral_ids.pop(0)
+            edges.append((hub_id, peripheral, 20))
+
+    # Peripheral edges (weight 5)
+    for i in range(len(peripheral_ids)):
+        for j in range(i+1, min(i+3, len(peripheral_ids))):
+            edges.append((peripheral_ids[i], peripheral_ids[j], 5))
+
+    # Expected optimal: num_hubs hub matches (at 100 each) + extras
+    optimal_weight = num_hubs * 100 + num_hubs * (nodes_per_hub // 2) * 5
+
+    return {
+        "name": f"Conflict Graph ({num_hubs} hubs, {nodes_per_hub} nodes/hub)",
+        "vertices": vertices,
+        "edges": list(set(edges)),  # Remove duplicates
+        "optimal_weight": optimal_weight,
+        "best_matches": [],
+    }
+
+CONFLICT_GRAPH_100 = _create_conflict_graph(num_hubs=3, nodes_per_hub=30)  # 3 hubs, 90 periph
+CONFLICT_GRAPH_500 = _create_conflict_graph(num_hubs=5, nodes_per_hub=100)  # 5 hubs, 500 periph
+CONFLICT_GRAPH_1K = _create_conflict_graph(num_hubs=10, nodes_per_hub=100)  # 10 hubs, 1000 periph
+
+# Graph 9: Greedy-Trap Graph - forces algorithms to navigate conflicting choices
+def _create_greedy_trap_graph(size: int = 100):
+    """Generate graph where greedy fails but adaptive strategies succeed.
+
+    Structure:
+    - Start: obvious high-weight edges (greedy takes them)
+    - Middle: medium-weight edges that block better matches
+    - End: hidden high-weight matches only accessible without greedy's first choices
+
+    Example: Two complete subgraphs connected by low edges.
+    If greedy matches within subgraph 1, it can't match within subgraph 2 well.
+    But balanced activation (Luby adaptive) can distribute matches better.
+    """
+    import random
+    random.seed(46)
+
+    vertices = list(range(1, size + 1))
+    edges = []
+
+    # Split into 2 dense subgraphs
+    mid = size // 2
+    group1 = list(range(1, mid + 1))
+    group2 = list(range(mid + 1, size + 1))
+
+    # Intra-group edges (weight 100 - obvious matches)
+    for group in [group1, group2]:
+        for i in range(len(group)):
+            for j in range(i+1, min(i+8, len(group))):
+                edges.append((group[i], group[j], 100))
+
+    # Inter-group edges (weight 1 - low priority)
+    for u in group1[:5]:
+        for v in group2[:5]:
+            edges.append((u, v, 1))
+
+    optimal_weight = (mid // 2) * 100 + (len(group2) // 2) * 100
+
+    return {
+        "name": f"Greedy-Trap Graph ({size} nodes)",
+        "vertices": vertices,
+        "edges": list(set(edges)),
+        "optimal_weight": optimal_weight,
+        "best_matches": [],
+    }
+
+GREEDY_TRAP_100 = _create_greedy_trap_graph(100)
+GREEDY_TRAP_500 = _create_greedy_trap_graph(500)
+
+# Graph 10: Adversarial Graph - designed specifically to enable GA optimization
+def _create_adversarial_graph(size: int = 100):
+    """Generate graph where different Luby activation strategies produce different final matchings.
+
+    Key insight: Create a graph where:
+    1. High-degree hub nodes have MEDIUM weight edges (tempts Greedy)
+    2. Low-degree peripheral nodes have HIGH weight edges (hidden gems)
+    3. Hub-to-hub edges create conflicts that Greedy/Itai can't resolve optimally
+    4. Different Luby coefficients → different hub activation → different final weights
+
+    Structure:
+    - N/5 hub nodes (high degree, medium weight edges)
+    - 4N/5 peripheral nodes (low degree, high weight edges)
+    - Hubs connected to each other (weight 50 - medium, creates conflicts)
+    - Hubs connected to peripherals (weight 30 - lower, but high-degree)
+    - Peripherals connected locally (weight 100 - high, but hard to reach)
+
+    Why this matters:
+    - Greedy: Sees hubs first (degree is obvious), matches within hubs (weight 50)
+    - Itai: Similar to Greedy, gets stuck in hub matching
+    - Luby with low coeff_degree: Avoids hubs, finds peripheral matches (weight 100) ✅ Better!
+    - Luby with high coeff_degree: Activates hubs, matches hubs (weight 50) ❌ Worse!
+    - GA learns: Low coeff_degree is better → optimizes
+    """
+    import random
+    random.seed(47)
+
+    vertices = list(range(1, size + 1))
+    edges = []
+
+    # Split into hubs and peripherals
+    num_hubs = max(2, size // 5)  # ~20% hubs
+    num_peripherals = size - num_hubs
+
+    hub_ids = list(range(1, num_hubs + 1))
+    peripheral_ids = list(range(num_hubs + 1, size + 1))
+
+    # Hub-to-hub edges (weight 50 - medium, creates conflicts)
+    for i, hub1 in enumerate(hub_ids):
+        for hub2 in hub_ids[i+1:]:
+            edges.append((hub1, hub2, 50))
+
+    # Hub-to-peripheral edges (weight 30 - low attractiveness)
+    for hub_id in hub_ids:
+        # Each hub connects to ~half the peripherals
+        targets = random.sample(peripheral_ids, k=min(num_peripherals // 2, len(peripheral_ids)))
+        for peripheral_id in targets:
+            edges.append((hub_id, peripheral_id, 30))
+
+    # Peripheral-to-peripheral edges (weight 100 - high, but isolated from hubs)
+    # Create local clusters of peripherals with high-weight edges
+    for i in range(0, len(peripheral_ids) - 1, 5):
+        # Local cluster: connect nearby peripherals with high weight
+        cluster = peripheral_ids[i:min(i+5, len(peripheral_ids))]
+        for j in range(len(cluster)):
+            for k in range(j+1, len(cluster)):
+                edges.append((cluster[j], cluster[k], 100))
+
+    # Expected: GA finds that avoiding hubs → accessing peripherals → weight ~(num_peripherals/2 * 100)
+    # vs Greedy: matches hubs → weight ~(num_hubs/2 * 50) + low peripheral matches
+    expected_peripheral_matches = num_peripherals // 10  # Conservative estimate
+    optimal_weight = expected_peripheral_matches * 100 + num_hubs // 2 * 50
+
+    return {
+        "name": f"Adversarial Graph ({size} nodes, {num_hubs} hubs)",
+        "vertices": vertices,
+        "edges": list(set(edges)),
+        "optimal_weight": optimal_weight,
+        "best_matches": [],
+    }
+
+ADVERSARIAL_100 = _create_adversarial_graph(100)
+ADVERSARIAL_200 = _create_adversarial_graph(200)
+
+# Graph 11: Extreme Matching Disparity - hubs vs isolated pairs
+def _create_extreme_disparity_graph(size: int = 100):
+    """Generate graph to force GA to learn parameter tuning.
+
+    Design philosophy: Make two completely different strategies yield different results.
+
+    Structure:
+    - Central hub cluster: 5 hubs all connected to each other (weight 10 - low!)
+    - Peripheral isolated pairs: N-5 nodes form 47 isolated high-weight pairs (weight 1000!)
+    - NO connections between hubs and peripherals
+    - NO overlap between hub and peripheral matching
+
+    Strategy A (Greedy/Itai favor hubs): Match hubs at weight 10 each
+    - Greedy matches hub edges: 2-3 pairs × 10 = 20-30 weight
+
+    Strategy B (Luby avoids hubs, uses peripherals): Find isolated pairs at weight 1000 each
+    - Luby avoids low-weight hubs, never reaches them
+    - Finds peripheral pairs: 47 pairs × 1000 = 47000 weight
+
+    Why Luby can succeed: Each peripheral pair is ONLY connected to itself (weight 1000)
+    - No conflicting edges
+    - No greedy temptation
+    - Pure connectivity matters
+    - Different activation patterns → different discovery of peripheral clusters
+    """
+    import random
+    random.seed(48)
+
+    vertices = list(range(1, size + 1))
+    edges = []
+
+    # 5 central hub nodes
+    hub_ids = [1, 2, 3, 4, 5]
+
+    # Remaining are peripheral
+    peripheral_ids = list(range(6, size + 1))
+
+    # Hub-to-hub edges (weight 10 - low temptation for greedy)
+    for i, hub1 in enumerate(hub_ids):
+        for hub2 in hub_ids[i+1:]:
+            edges.append((hub1, hub2, 10))
+
+    # Create isolated pairs from remaining nodes
+    # Each pair only connected to itself
+    for i in range(0, len(peripheral_ids) - 1, 2):
+        u, v = peripheral_ids[i], peripheral_ids[i + 1]
+        edges.append((u, v, 1000))  # Massive weight!
+
+    return {
+        "name": f"Extreme Disparity Graph ({size} nodes)",
+        "vertices": vertices,
+        "edges": list(set(edges)),
+        "optimal_weight": (len(peripheral_ids) // 2) * 1000 + 15,  # All peripheral pairs + maybe 1-2 hub pairs
+        "best_matches": [],
+    }
+
+EXTREME_DISPARITY_100 = _create_extreme_disparity_graph(100)
+
+# Graph 12: Competing Matchings - forces choice between competing strategies
+def _create_competing_matchings_graph(size: int = 100):
+    """Generate graph with two competing complete matchings of different weights.
+
+    Key insight: Create a scenario where different algorithms get stuck in different local maxima.
+
+    Structure:
+    - Two complete matchings: M1 (total weight 5000) and M2 (total weight 4000)
+    - M1 edges are high-degree nodes (easy for Greedy to find)
+    - M2 edges are low-degree nodes (hard for Greedy, better for probabilistic Luby)
+    - Connections between M1 and M2 nodes (weight 1 - distractions)
+    - M1 edges: weight 100 each
+    - M2 edges: weight 60 each
+    - M1-M2 cross edges: weight 1 each
+
+    Expected behavior:
+    - Greedy/Itai: Match M1 (obvious high-degree nodes), get stuck at 5000
+    - Luby with right params: Avoid M1 hubs, explore M2, get 4000 (then M1 leftovers?)
+    - GA learns: Sometimes avoiding greed is better!
+
+    This forces a REAL tradeoff: explore M1 (high reward, medium exploration) vs M2 (lower reward, better exploration)
+    """
+    import random
+    random.seed(49)
+
+    vertices = list(range(1, size + 1))
+    edges = []
+
+    # Split vertices into two groups: M1 nodes and M2 nodes
+    m1_size = size // 2
+    m2_size = size - m1_size
+
+    m1_nodes = list(range(1, m1_size + 1))
+    m2_nodes = list(range(m1_size + 1, size + 1))
+
+    # M1: Complete matching among first half (high weight, attracts Greedy)
+    for i in range(0, len(m1_nodes) - 1, 2):
+        u, v = m1_nodes[i], m1_nodes[i + 1]
+        edges.append((u, v, 100))
+
+    # M2: Complete matching among second half (lower weight, but real alternative)
+    for i in range(0, len(m2_nodes) - 1, 2):
+        u, v = m2_nodes[i], m2_nodes[i + 1]
+        edges.append((u, v, 60))
+
+    # Cross edges (weight 1 - temptations that don't help)
+    for u in m1_nodes[:5]:
+        for v in m2_nodes[:5]:
+            edges.append((u, v, 1))
+
+    # M1 complete graph (within group)
+    for i in range(len(m1_nodes)):
+        for j in range(i+1, min(i+4, len(m1_nodes))):
+            if (m1_nodes[i], m1_nodes[j]) not in edges and (m1_nodes[j], m1_nodes[i]) not in edges:
+                edges.append((m1_nodes[i], m1_nodes[j], 100))
+
+    # M2 internal edges (within group)
+    for i in range(len(m2_nodes)):
+        for j in range(i+1, min(i+4, len(m2_nodes))):
+            if (m2_nodes[i], m2_nodes[j]) not in edges and (m2_nodes[j], m2_nodes[i]) not in edges:
+                edges.append((m2_nodes[i], m2_nodes[j], 60))
+
+    optimal_weight = (m1_size // 2) * 100 + (m2_size // 2) * 60
+
+    return {
+        "name": f"Competing Matchings Graph ({size} nodes)",
+        "vertices": vertices,
+        "edges": list(set(edges)),
+        "optimal_weight": optimal_weight,
+        "best_matches": [],
+    }
+
+COMPETING_100 = _create_competing_matchings_graph(100)
+
 # Easy access
-GRAPHS = [GRID_4x4, K5_CLUSTERS, STAR_WITH_TAIL, RANDOM_DENSE_GRAPH_1K, CLUSTERED_GRAPH_1K, SCALE_FREE_GRAPH_1K, BIPARTITE_GRAPH_1K]
+GRAPHS = [GRID_4x4, K5_CLUSTERS, STAR_WITH_TAIL, RANDOM_DENSE_GRAPH_1K, CLUSTERED_GRAPH_1K, SCALE_FREE_GRAPH_1K, BIPARTITE_GRAPH_1K, CONFLICT_GRAPH_1K, GREEDY_TRAP_100, ADVERSARIAL_100, EXTREME_DISPARITY_100, COMPETING_100]
 
 
 def get_graph(name):

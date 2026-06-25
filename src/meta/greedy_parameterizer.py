@@ -37,8 +37,8 @@ class GreedyParameterizer(AlgorithmParameterizer):
         # Create Greedy algorithm
         greedy = GreedyMatching()
 
-        # Create scheduler with algorithm
-        config = SimulationConfig(max_rounds=100)
+        # Create scheduler with algorithm using max_iterations from canonical vector
+        config = SimulationConfig(max_rounds=int(canonical_vector.max_iterations))
         scheduler = Scheduler(graph, greedy, config)
 
         # Run scheduler until termination
