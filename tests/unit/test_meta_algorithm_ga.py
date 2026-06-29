@@ -1,11 +1,9 @@
 """Unit tests for MetaAlgorithmGA - 8+ comprehensive tests."""
 
 import pytest
-from src.meta.meta_algorithm_ga import MetaAlgorithmGA
-from src.meta.fitness_evaluator import FitnessEvaluator
-from src.meta.conflict_resolver import ConflictResolver
-from src.meta.cascading_loop import CascadingLoop
-from src.meta.canonical_vector import CanonicalVector
+from src.meta.core.meta_algorithm_ga import MetaAlgorithmGA
+from src.meta.core.fitness_evaluator import FitnessEvaluator
+from src.meta.core.canonical_vector import CanonicalVector
 from src.graph.graph_manager import GraphManager
 
 
@@ -14,17 +12,13 @@ class TestMetaAlgorithmGABasics:
 
     def test_ga_initialization(self) -> None:
         """Should initialize without errors."""
-        resolver = ConflictResolver()
-        loop = CascadingLoop(resolver)
-        evaluator = FitnessEvaluator(loop)
+        evaluator = FitnessEvaluator()
         ga = MetaAlgorithmGA(evaluator, population_size=10, generations=5)
         assert ga is not None
 
     def test_ga_name(self) -> None:
         """Should return correct name."""
-        resolver = ConflictResolver()
-        loop = CascadingLoop(resolver)
-        evaluator = FitnessEvaluator(loop)
+        evaluator = FitnessEvaluator()
         ga = MetaAlgorithmGA(evaluator)
         assert ga.name() == "MetaAlgorithmGA"
 
@@ -40,9 +34,7 @@ class TestMetaAlgorithmGAEvolution:
         graph.add_edge(1, 2, 1.0)
         graph.add_edge(3, 4, 1.0)
 
-        resolver = ConflictResolver()
-        loop = CascadingLoop(resolver)
-        evaluator = FitnessEvaluator(loop)
+        evaluator = FitnessEvaluator()
         ga = MetaAlgorithmGA(evaluator, population_size=5, generations=2)
 
         result = ga.evolve(graph)
@@ -60,9 +52,7 @@ class TestMetaAlgorithmGAEvolution:
             graph.add_vertex(v)
         graph.add_edge(1, 2, 1.0)
 
-        resolver = ConflictResolver()
-        loop = CascadingLoop(resolver)
-        evaluator = FitnessEvaluator(loop)
+        evaluator = FitnessEvaluator()
         generations = 5
         ga = MetaAlgorithmGA(
             evaluator, population_size=5, generations=generations
@@ -81,9 +71,7 @@ class TestMetaAlgorithmGAEvolution:
         graph.add_edge(3, 4, 4.0)
         graph.add_edge(5, 6, 3.0)
 
-        resolver = ConflictResolver()
-        loop = CascadingLoop(resolver)
-        evaluator = FitnessEvaluator(loop)
+        evaluator = FitnessEvaluator()
         ga = MetaAlgorithmGA(
             evaluator, population_size=10, generations=5, mutation_rate=0.1
         )
@@ -101,9 +89,7 @@ class TestMetaAlgorithmGAEvolution:
             graph.add_vertex(v)
         graph.add_edge(1, 2, 1.0)
 
-        resolver = ConflictResolver()
-        loop = CascadingLoop(resolver)
-        evaluator = FitnessEvaluator(loop)
+        evaluator = FitnessEvaluator()
         ga = MetaAlgorithmGA(
             evaluator, population_size=5, generations=3, mutation_rate=0.2
         )
@@ -120,9 +106,7 @@ class TestMetaAlgorithmGAEvolution:
             graph.add_vertex(v)
         graph.add_edge(1, 2, 1.0)
 
-        resolver = ConflictResolver()
-        loop = CascadingLoop(resolver)
-        evaluator = FitnessEvaluator(loop)
+        evaluator = FitnessEvaluator()
         ga = MetaAlgorithmGA(
             evaluator, population_size=3, generations=1
         )
@@ -140,9 +124,7 @@ class TestMetaAlgorithmGAEvolution:
         graph.add_edge(1, 2, 1.0)
         graph.add_edge(3, 4, 1.0)
 
-        resolver = ConflictResolver()
-        loop = CascadingLoop(resolver)
-        evaluator = FitnessEvaluator(loop)
+        evaluator = FitnessEvaluator()
         ga = MetaAlgorithmGA(
             evaluator, population_size=50, generations=2
         )
@@ -156,9 +138,7 @@ class TestMetaAlgorithmGAEvolution:
         """Should handle empty graph."""
         graph = GraphManager.create_empty_graph()
 
-        resolver = ConflictResolver()
-        loop = CascadingLoop(resolver)
-        evaluator = FitnessEvaluator(loop)
+        evaluator = FitnessEvaluator()
         ga = MetaAlgorithmGA(
             evaluator, population_size=5, generations=2
         )
@@ -176,9 +156,7 @@ class TestMetaAlgorithmGAEvolution:
         graph.add_edge(1, 2, 10.0)
         graph.add_edge(3, 4, 10.0)
 
-        resolver = ConflictResolver()
-        loop = CascadingLoop(resolver)
-        evaluator = FitnessEvaluator(loop)
+        evaluator = FitnessEvaluator()
         ga = MetaAlgorithmGA(
             evaluator, population_size=10, generations=3
         )

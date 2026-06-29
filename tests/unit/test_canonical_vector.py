@@ -1,6 +1,6 @@
 """Unit tests for CanonicalVector parameter container - 15 tests."""
 
-from src.meta.canonical_vector import CanonicalVector
+from src.meta.core.canonical_vector import CanonicalVector
 
 
 class TestCanonicalVectorInitialization:

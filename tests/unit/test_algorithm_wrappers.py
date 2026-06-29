@@ -1,10 +1,10 @@
 """Unit tests for algorithm parameterizer wrappers - 15+ comprehensive tests."""
 
 import pytest
-from src.meta.canonical_vector import CanonicalVector
-from src.meta.greedy_parameterizer import GreedyParameterizer
-from src.meta.itai_parameterizer import ItaiParameterizer
-from src.meta.luby_parameterizer import LubyParameterizer
+from src.meta.core.canonical_vector import CanonicalVector
+from src.meta.parameterizers.greedy import GreedyParameterizer
+from src.meta.parameterizers.itai import ItaiParameterizer
+from src.meta.parameterizers.luby import LubyParameterizer
 from src.graph.graph_manager import GraphManager
 
 

@@ -1,8 +1,8 @@
 """Unit tests for adaptive activation in Luby parameterizer - 5+ tests."""
 
 import pytest
-from src.meta.canonical_vector import CanonicalVector
-from src.meta.luby_parameterizer import LubyParameterizer
+from src.meta.core.canonical_vector import CanonicalVector
+from src.meta.parameterizers.luby import LubyParameterizer
 from src.graph.graph_manager import GraphManager
 
 

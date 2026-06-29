@@ -1,4 +1,4 @@
-from typing import Dict, Optional, Set
+from typing import Dict, Set
 from src.graph.graph_manager import GraphManager
 from src.state.state_store import StateStore
 

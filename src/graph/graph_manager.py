@@ -111,12 +111,6 @@ class GraphManager:
             raise ValueError(f"Edge ({u}, {v}) does not exist")
         return self._graph[u][v].get("weight", 1.0)
 
-    def get_vertex_property(self, vertex_id: int, key: str) -> Any | None:
-        """Get a property of a vertex."""
-        if vertex_id not in self._graph:
-            raise ValueError(f"Vertex {vertex_id} not in graph")
-        return self._graph.nodes[vertex_id].get(key)
-
     def is_connected(self) -> bool:
         """Check if graph is connected."""
         return nx.is_connected(self._graph)
@@ -170,26 +164,6 @@ class GraphManager:
                 visited.add(v)
 
         return total
-
-    def is_matching_maximal(self, matching: Dict[int, int]) -> bool:
-        """Check if matching is maximal (no edges can be added).
-
-        Args:
-            matching: Dict mapping node_id -> matched_partner
-
-        Returns:
-            bool: True if maximal, False otherwise
-        """
-        matched_nodes = set(matching.keys())
-
-        for u in self.vertices():
-            if u in matched_nodes:
-                continue
-            for v in self.neighbors(u):
-                if v not in matched_nodes:
-                    return False
-
-        return True
 
     @staticmethod
     def normalize_edge(u: int, v: int) -> tuple:

@@ -1,15 +1,19 @@
 """Unit tests for AlgorithmParameterizer ABC - 8 comprehensive tests."""
 
 import pytest
-from src.meta.algorithm_parameterizer import AlgorithmParameterizer
-from src.meta.canonical_vector import CanonicalVector
+from src.meta.parameterizers.base import AlgorithmParameterizer
+from src.meta.core.canonical_vector import CanonicalVector
 from src.graph.graph_manager import GraphManager
 
 
 class ConcreteParameterizer(AlgorithmParameterizer):
     """Concrete implementation for testing (stub)."""
 
-    def execute(self, graph, canonical_vector):
+    def _extract_parameters(self, canonical_vector):
+        """Extract test parameters."""
+        return {"test": True}
+
+    def _run_algorithm(self, graph, parameters):
         """Return empty matching."""
         return {}
 

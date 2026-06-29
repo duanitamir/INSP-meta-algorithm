@@ -63,24 +63,6 @@ def _validate_parameter(
     return True, None
 
 
-def _validate_range_pair(
-    min_val: Union[float, int], max_val: Union[float, int], name: str
-) -> Tuple[bool, str | None]:
-    """Validate that min_val <= max_val for a range parameter.
-
-    Args:
-        min_val: Minimum value
-        max_val: Maximum value
-        name: Base name for error message (e.g., "degree")
-
-    Returns:
-        (True, None) if valid, (False, error_msg) if invalid
-    """
-    if min_val > max_val:
-        return False, f"{name}_min must be <= {name}_max"
-    return True, None
-
-
 class CanonicalVector:
     """Container for 10 GA parameters governing algorithm specialization.
 

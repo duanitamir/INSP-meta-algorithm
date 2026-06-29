@@ -123,7 +123,3 @@ class StateStore:
     def get_snapshots(self) -> List[StateSnapshot]:
         """Get all saved snapshots."""
         return self._snapshots.copy()
-
-    def clear_snapshots(self) -> None:
-        """Clear all snapshots."""
-        self._snapshots.clear()
