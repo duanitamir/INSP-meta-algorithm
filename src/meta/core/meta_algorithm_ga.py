@@ -34,7 +34,7 @@ class MetaAlgorithmGA:
         generations: int = 10,
         mutation_rate: float = 0.1,
         elite_fraction: float = 0.5,
-        early_stop_generations: int = 5,
+        early_stop_generations: int = 10,
         num_workers: int = 4,
     ) -> None:
         """Initialize genetic algorithm.
@@ -45,7 +45,7 @@ class MetaAlgorithmGA:
             generations: Number of generations to evolve
             mutation_rate: Base mutation probability per parameter [0, 1]
             elite_fraction: Fraction of population to keep as elite [0.1, 0.9]
-            early_stop_generations: Stop if no improvement for N generations
+            early_stop_generations: Stop if no improvement for N generations (default 10)
             num_workers: Number of parallel workers for evaluation
         """
         self.fitness_evaluator = fitness_evaluator
@@ -212,7 +212,7 @@ class MetaAlgorithmGA:
             (-1.0, 1.0),
             (-1.0, 1.0),
             (1.0, 20.0),  # [7] itai_timeout_rounds
-            (5.0, 100.0),  # [8] max_iterations
+            (5.0, 20.0),  # [8] max_iterations (reduced from 100)
             (0.0, 0.1),  # [9] convergence_threshold
         ]
 

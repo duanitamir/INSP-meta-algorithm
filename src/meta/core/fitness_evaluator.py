@@ -38,6 +38,12 @@ class FitnessEvaluator:
         if not is_valid:
             raise ValueError(f"Invalid vector: {error}")
 
+        # Cap max_iterations to prevent expensive iterations
+        # Matching algorithms typically converge in 3-5 iterations (maximal matching found)
+        # Setting cap at 20 provides safe upper bound while ensuring reasonable evaluation time
+        if vector.max_iterations > 20:
+            vector.max_iterations = 20
+
         # Run distributed orchestrator with the vector
         parameterizers = ParameterizerFactory.create_default()
         matching, metrics = self.orchestrator.execute(graph, vector, parameterizers)

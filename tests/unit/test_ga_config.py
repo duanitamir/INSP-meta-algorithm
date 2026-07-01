@@ -141,66 +141,6 @@ class TestGAConfigValidation:
         assert is_valid
 
 
-class TestGAConfigPresets:
-    """Test predefined configuration presets."""
-
-    def test_small_graph_preset(self) -> None:
-        """Small graph preset should be valid and optimized."""
-        config = GAConfig.small_graph()
-        is_valid, error = config.validate()
-        assert is_valid
-        assert config.population_size == 10
-        assert config.generations == 10
-        assert config.max_iterations == 20
-
-    def test_medium_graph_preset(self) -> None:
-        """Medium graph preset should be valid and optimized."""
-        config = GAConfig.medium_graph()
-        is_valid, error = config.validate()
-        assert is_valid
-        assert config.population_size == 15
-        assert config.generations == 15
-        assert config.max_iterations == 50
-
-    def test_large_graph_preset(self) -> None:
-        """Large graph preset should be valid and optimized."""
-        config = GAConfig.large_graph()
-        is_valid, error = config.validate()
-        assert is_valid
-        assert config.population_size == 20
-        assert config.generations == 30
-        assert config.max_iterations == 100
-
-    def test_aggressive_exploration_preset(self) -> None:
-        """Aggressive exploration preset should have higher mutation, lower elitism."""
-        config = GAConfig.aggressive_exploration()
-        is_valid, error = config.validate()
-        assert is_valid
-        assert config.mutation_rate == 0.20
-        assert config.elite_fraction == 0.3
-
-    def test_conservative_exploitation_preset(self) -> None:
-        """Conservative exploitation preset should have lower mutation, higher elitism."""
-        config = GAConfig.conservative_exploitation()
-        is_valid, error = config.validate()
-        assert is_valid
-        assert config.mutation_rate == 0.08
-        assert config.elite_fraction == 0.7
-
-    def test_all_presets_valid(self) -> None:
-        """All presets should produce valid configs."""
-        presets = [
-            GAConfig.small_graph(),
-            GAConfig.medium_graph(),
-            GAConfig.large_graph(),
-            GAConfig.aggressive_exploration(),
-            GAConfig.conservative_exploitation(),
-        ]
-        for preset in presets:
-            is_valid, error = preset.validate()
-            assert is_valid, f"Preset failed validation: {error}"
-
-
 class TestGAConfigSerialization:
     """Test GAConfig serialization and deserialization."""
 

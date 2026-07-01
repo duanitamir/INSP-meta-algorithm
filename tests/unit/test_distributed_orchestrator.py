@@ -222,12 +222,12 @@ class TestDistributedOrchestratorConvergence:
 
         orchestrator = DistributedOrchestrator()
         parameterizers = ParameterizerFactory.create_default()
-        vector = CanonicalVector(max_iterations=100)
+        vector = CanonicalVector(max_iterations=20)  # Reduced from 100
 
         _, metrics = orchestrator.execute(graph, vector, parameterizers)
 
         # Should converge before max iterations
-        assert metrics["iterations"] <= 100
+        assert metrics["iterations"] <= 20
 
     def test_respects_max_iterations(self) -> None:
         """Should not exceed max_iterations from canonical vector."""

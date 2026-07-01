@@ -136,8 +136,8 @@ class DistributedOrchestrator:
             # Resolve conflicts via voting
             merged = self.conflict_resolver.resolve_matches(node_id, threshold=0.5)
 
-            # Calculate weight
-            current_weight = working_graph.calculate_matching_weight(merged)
+            # Calculate weight using ORIGINAL graph (edges exist there, not in reduced working_graph)
+            current_weight = graph.calculate_matching_weight(merged)
 
             # Calculate improvement
             if iteration > 0:
@@ -161,9 +161,14 @@ class DistributedOrchestrator:
             self.conflict_resolver.node_states[node_id].reset_votes()
             self.convergence_detector.reset_convergence_votes(node_id)
 
-        # Guarantee maximal matching
+        # Guarantee maximal matching (with safety limit to prevent infinite loops)
         remaining_nodes = frozenset(graph.vertices() - frozenset(all_matched.keys()))
-        while len(remaining_nodes) >= 2 and not self._is_maximal_matching(all_matched, graph):
+        maximal_iter = 0
+        max_maximal_iterations = 20  # Safety limit to prevent infinite loops
+
+        while (len(remaining_nodes) >= 2 and
+               not self._is_maximal_matching(all_matched, graph) and
+               maximal_iter < max_maximal_iterations):
             working_graph = graph.get_subgraph(remaining_nodes)
             matchings = [param.execute(working_graph, canonical_vector) for param in parameterizers]
 
@@ -187,6 +192,7 @@ class DistributedOrchestrator:
 
             all_matched.update(merged)
             remaining_nodes = frozenset(graph.vertices() - frozenset(all_matched.keys()))
+            maximal_iter += 1
 
         return (
             all_matched,

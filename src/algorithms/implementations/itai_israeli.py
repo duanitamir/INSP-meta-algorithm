@@ -56,7 +56,7 @@ class ItaiIsraeliMaximalMatching(MatchingAlgorithm):
                 "produces_maximal": True,
                 "produces_maximum": False,
                 "deterministic": True,
-                "max_rounds": 200,
+                "max_rounds": 30,  # Aggressive limit to prevent infinite loops from timeout resets
                 "timeout_rounds": timeout_rounds,
             },
         )
@@ -238,6 +238,6 @@ class ItaiIsraeliMaximalMatching(MatchingAlgorithm):
         )
 
     def check_termination(self, state_store: StateStore, round_num: RoundNumber, messages_sent: int) -> Tuple[bool, str | None]:
-        """Check if algorithm has converged (uses common termination logic)."""
-        max_rounds = self.metadata.properties.get("max_rounds", 200) if self.metadata.properties else 200
+        """Check if algorithm has converged (uses common termination logic with aggressive round limit)."""
+        max_rounds = self.metadata.properties.get("max_rounds", 30)
         return self.check_default_termination(state_store, round_num, messages_sent, max_rounds)

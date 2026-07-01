@@ -69,10 +69,18 @@ STAR_WITH_TAIL = {
 }
 
 # Graph 4: Random Dense Graph (1000 nodes)
-def _create_random_dense_graph():
-    """Generate random dense graph with ~1000 nodes and ~5000 edges."""
-    import random
-    random.seed(42)
+def _create_random_dense_graph(seed=None):
+    """Generate random dense graph with ~1000 nodes and ~5000 edges.
+
+    Args:
+        seed: Random seed for reproducibility. If None, graph is randomized.
+              Pass seed=42 to get the original deterministic graph.
+    """
+    import random as rng
+    if seed is not None:
+        rng.seed(seed)
+    else:
+        rng.seed()  # Randomize with current time/entropy
 
     vertices = list(range(1, 1001))
     edges = []
@@ -80,16 +88,16 @@ def _create_random_dense_graph():
     # Create connected backbone first (ensures connectivity)
     for i in range(len(vertices) - 1):
         u, v = vertices[i], vertices[i + 1]
-        weight = random.randint(1, 100)
+        weight = rng.randint(1, 100)
         edges.append((u, v, weight))
 
     # Add random edges to increase density
     target_edges = 5000
     while len(edges) < target_edges:
-        u = random.choice(vertices)
-        v = random.choice(vertices)
+        u = rng.choice(vertices)
+        v = rng.choice(vertices)
         if u != v and (min(u, v), max(u, v)) not in {(min(a, b), max(a, b)) for a, b, _ in edges}:
-            weight = random.randint(1, 100)
+            weight = rng.randint(1, 100)
             edges.append((u, v, weight))
 
     # Calculate approximate optimal weight (rough estimate)
@@ -105,13 +113,23 @@ def _create_random_dense_graph():
         "best_matches": [],  # Unknown for random graph
     }
 
-RANDOM_DENSE_GRAPH_1K = _create_random_dense_graph()
+RANDOM_DENSE_GRAPH_1K = _create_random_dense_graph(seed=42)  # seed=42 for reproducibility
 
 # Graph 5: Clustered Graph with Communities (1000 nodes)
-def _create_clustered_graph(nr_of_nudes: int = 1000, nr_communities: int = 10):
-    """Generate clustered graph with communities."""
-    import random
-    random.seed(43)
+def _create_clustered_graph(nr_of_nudes: int = 1000, nr_communities: int = 10, seed=None):
+    """Generate clustered graph with communities.
+
+    Args:
+        nr_of_nudes: Number of vertices
+        nr_communities: Number of communities
+        seed: Random seed for reproducibility. If None, graph is randomized.
+              Pass seed=43 to get the original deterministic graph.
+    """
+    import random as rng
+    if seed is not None:
+        rng.seed(seed)
+    else:
+        rng.seed()  # Randomize with current time/entropy
 
     vertices = list(range(1, nr_of_nudes+1))
     edges = []
@@ -128,37 +146,45 @@ def _create_clustered_graph(nr_of_nudes: int = 1000, nr_communities: int = 10):
         for i in range(len(community_nodes)):
             for j in range(i + 1, min(i + 5, len(community_nodes))):  # Each node connects to ~5 others
                 u, v = community_nodes[i], community_nodes[j]
-                weight = random.randint(50, 100)
+                weight = rng.randint(50, 100)
                 edges.append((u, v, weight))
 
     # Add sparse inter-community edges (low weight)
     for c1 in range(num_communities):
         for c2 in range(c1 + 1, num_communities):
-            u = random.randint(c1 * community_size + 1, (c1 + 1) * community_size)
-            v = random.randint(c2 * community_size + 1, (c2 + 1) * community_size)
-            weight = random.randint(1, 20)
+            u = rng.randint(c1 * community_size + 1, (c1 + 1) * community_size)
+            v = rng.randint(c2 * community_size + 1, (c2 + 1) * community_size)
+            weight = rng.randint(1, 20)
             edges.append((u, v, weight))
 
     # Approximate optimal: ~50 nodes per community match internally at high weight
     optimal_weight = int(num_communities * 25 * 75)  # Rough estimate
 
     return {
-        "name": "Clustered Graph with Communities (1000 nodes)",
+        "name": f"Clustered Graph with Communities ({nr_of_nudes} nodes)",
         "vertices": vertices,
         "edges": list(set(edges)),  # Remove duplicates
         "optimal_weight": optimal_weight,
         "best_matches": [],
     }
 
-CLUSTERED_GRAPH_1K = _create_clustered_graph()
-CLUSTERED_GRAPH_500 = _create_clustered_graph(nr_of_nudes=500, nr_communities=10)
-CLUSTERED_GRAPH_100 = _create_clustered_graph(nr_of_nudes=100, nr_communities=5)
+CLUSTERED_GRAPH_1K = _create_clustered_graph(seed=43)  # seed=43 for reproducibility
+CLUSTERED_GRAPH_500 = _create_clustered_graph(nr_of_nudes=500, nr_communities=10, seed=43)
+CLUSTERED_GRAPH_100 = _create_clustered_graph(nr_of_nudes=100, nr_communities=5, seed=43)
 
 # Graph 6: Scale-Free Graph (1000 nodes, power-law degree distribution)
-def _create_scale_free_graph():
-    """Generate scale-free graph using preferential attachment."""
-    import random
-    random.seed(44)
+def _create_scale_free_graph(seed=None):
+    """Generate scale-free graph using preferential attachment.
+
+    Args:
+        seed: Random seed for reproducibility. If None, graph is randomized.
+              Pass seed=44 to get the original deterministic graph.
+    """
+    import random as rng
+    if seed is not None:
+        rng.seed(seed)
+    else:
+        rng.seed()  # Randomize with current time/entropy
 
     vertices = list(range(1, 1001))
     edges = []
@@ -169,7 +195,7 @@ def _create_scale_free_graph():
     for i in range(len(core)):
         for j in range(i + 1, len(core)):
             u, v = core[i], core[j]
-            weight = random.randint(10, 100)
+            weight = rng.randint(10, 100)
             edges.append((u, v, weight))
             degrees[u] += 1
             degrees[v] += 1
@@ -178,13 +204,13 @@ def _create_scale_free_graph():
     for new_node in vertices[10:]:
         # Select k nodes based on current degrees (preferential attachment)
         k = min(5, len(vertices) - 1)
-        candidates = random.choices(vertices[:vertices.index(new_node)],
+        candidates = rng.choices(vertices[:vertices.index(new_node)],
                                    weights=[degrees[v] + 1 for v in vertices[:vertices.index(new_node)]],
                                    k=k)
 
         for target in set(candidates):
             if target != new_node:
-                weight = random.randint(1, 100)
+                weight = rng.randint(1, 100)
                 edges.append((min(new_node, target), max(new_node, target), weight))
                 degrees[new_node] += 1
                 degrees[target] += 1
@@ -204,13 +230,21 @@ def _create_scale_free_graph():
         "best_matches": [],
     }
 
-SCALE_FREE_GRAPH_1K = _create_scale_free_graph()
+SCALE_FREE_GRAPH_1K = _create_scale_free_graph(seed=44)  # seed=44 for reproducibility
 
 # Graph 7: Bipartite Graph (1000 nodes, two sides of 500 each)
-def _create_bipartite_graph():
-    """Generate complete bipartite graph K(500,500) with random weights."""
-    import random
-    random.seed(45)
+def _create_bipartite_graph(seed=None):
+    """Generate complete bipartite graph K(500,500) with random weights.
+
+    Args:
+        seed: Random seed for reproducibility. If None, graph is randomized.
+              Pass seed=45 to get the original deterministic graph.
+    """
+    import random as rng
+    if seed is not None:
+        rng.seed(seed)
+    else:
+        rng.seed()  # Randomize with current time/entropy
 
     left_nodes = list(range(1, 501))
     right_nodes = list(range(501, 1001))
@@ -219,9 +253,9 @@ def _create_bipartite_graph():
 
     # Connect each left node to ~10 random right nodes
     for u in left_nodes:
-        targets = random.sample(right_nodes, k=min(10, len(right_nodes)))
+        targets = rng.sample(right_nodes, k=min(10, len(right_nodes)))
         for v in targets:
-            weight = random.randint(1, 100)
+            weight = rng.randint(1, 100)
             edges.append((u, v, weight))
 
     # Perfect matching possible: 500 pairs at various weights
@@ -236,10 +270,10 @@ def _create_bipartite_graph():
         "best_matches": [],
     }
 
-BIPARTITE_GRAPH_1K = _create_bipartite_graph()
+BIPARTITE_GRAPH_1K = _create_bipartite_graph(seed=45)  # seed=45 for reproducibility
 
 # Graph 8: Conflict Graph - designed for GA parameter tuning
-def _create_conflict_graph(num_hubs: int = 5, nodes_per_hub: int = 20):
+def _create_conflict_graph(num_hubs: int = 5, nodes_per_hub: int = 20, seed=None):
     """Generate conflict graph where Luby parameter tuning makes a difference.
 
     Structure:
@@ -254,9 +288,18 @@ def _create_conflict_graph(num_hubs: int = 5, nodes_per_hub: int = 20):
     - Luby adaptive activation can strategically activate/deactivate hubs
     - Different coefficients → different final matching weights
     - GA can optimize: find coefficients that avoid conflicts
+
+    Args:
+        num_hubs: Number of hub nodes
+        nodes_per_hub: Peripheral nodes per hub
+        seed: Random seed for reproducibility. If None, graph is randomized.
+              Pass seed=45 to get the original deterministic graph.
     """
-    import random
-    random.seed(45)
+    import random as rng
+    if seed is not None:
+        rng.seed(seed)
+    else:
+        rng.seed()  # Randomize with current time/entropy
 
     num_hubs = num_hubs
     nodes_per_hub = nodes_per_hub
@@ -296,12 +339,12 @@ def _create_conflict_graph(num_hubs: int = 5, nodes_per_hub: int = 20):
         "best_matches": [],
     }
 
-CONFLICT_GRAPH_100 = _create_conflict_graph(num_hubs=3, nodes_per_hub=30)  # 3 hubs, 90 periph
-CONFLICT_GRAPH_500 = _create_conflict_graph(num_hubs=5, nodes_per_hub=100)  # 5 hubs, 500 periph
-CONFLICT_GRAPH_1K = _create_conflict_graph(num_hubs=10, nodes_per_hub=100)  # 10 hubs, 1000 periph
+CONFLICT_GRAPH_100 = _create_conflict_graph(num_hubs=3, nodes_per_hub=30, seed=45)  # 3 hubs, 90 periph
+CONFLICT_GRAPH_500 = _create_conflict_graph(num_hubs=5, nodes_per_hub=100, seed=45)  # 5 hubs, 500 periph
+CONFLICT_GRAPH_1K = _create_conflict_graph(num_hubs=10, nodes_per_hub=100, seed=45)  # 10 hubs, 1000 periph
 
 # Graph 9: Greedy-Trap Graph - forces algorithms to navigate conflicting choices
-def _create_greedy_trap_graph(size: int = 100):
+def _create_greedy_trap_graph(size: int = 100, seed=None):
     """Generate graph where greedy fails but adaptive strategies succeed.
 
     Structure:
@@ -312,9 +355,17 @@ def _create_greedy_trap_graph(size: int = 100):
     Example: Two complete subgraphs connected by low edges.
     If greedy matches within subgraph 1, it can't match within subgraph 2 well.
     But balanced activation (Luby adaptive) can distribute matches better.
+
+    Args:
+        size: Number of vertices
+        seed: Random seed for reproducibility. If None, graph is randomized.
+              Pass seed=46 to get the original deterministic graph.
     """
-    import random
-    random.seed(46)
+    import random as rng
+    if seed is not None:
+        rng.seed(seed)
+    else:
+        rng.seed()  # Randomize with current time/entropy
 
     vertices = list(range(1, size + 1))
     edges = []
@@ -345,11 +396,11 @@ def _create_greedy_trap_graph(size: int = 100):
         "best_matches": [],
     }
 
-GREEDY_TRAP_100 = _create_greedy_trap_graph(100)
-GREEDY_TRAP_500 = _create_greedy_trap_graph(500)
+GREEDY_TRAP_100 = _create_greedy_trap_graph(100, seed=46)
+GREEDY_TRAP_500 = _create_greedy_trap_graph(500, seed=46)
 
 # Graph 10: Adversarial Graph - designed specifically to enable GA optimization
-def _create_adversarial_graph(size: int = 100):
+def _create_adversarial_graph(size: int = 100, seed=None):
     """Generate graph where different Luby activation strategies produce different final matchings.
 
     Key insight: Create a graph where:
@@ -371,9 +422,17 @@ def _create_adversarial_graph(size: int = 100):
     - Luby with low coeff_degree: Avoids hubs, finds peripheral matches (weight 100) ✅ Better!
     - Luby with high coeff_degree: Activates hubs, matches hubs (weight 50) ❌ Worse!
     - GA learns: Low coeff_degree is better → optimizes
+
+    Args:
+        size: Number of vertices
+        seed: Random seed for reproducibility. If None, graph is randomized.
+              Pass seed=47 to get the original deterministic graph.
     """
-    import random
-    random.seed(47)
+    import random as rng
+    if seed is not None:
+        rng.seed(seed)
+    else:
+        rng.seed()  # Randomize with current time/entropy
 
     vertices = list(range(1, size + 1))
     edges = []
@@ -393,7 +452,7 @@ def _create_adversarial_graph(size: int = 100):
     # Hub-to-peripheral edges (weight 30 - low attractiveness)
     for hub_id in hub_ids:
         # Each hub connects to ~half the peripherals
-        targets = random.sample(peripheral_ids, k=min(num_peripherals // 2, len(peripheral_ids)))
+        targets = rng.sample(peripheral_ids, k=min(num_peripherals // 2, len(peripheral_ids)))
         for peripheral_id in targets:
             edges.append((hub_id, peripheral_id, 30))
 
@@ -419,11 +478,11 @@ def _create_adversarial_graph(size: int = 100):
         "best_matches": [],
     }
 
-ADVERSARIAL_100 = _create_adversarial_graph(100)
-ADVERSARIAL_200 = _create_adversarial_graph(200)
+ADVERSARIAL_100 = _create_adversarial_graph(100, seed=47)
+ADVERSARIAL_200 = _create_adversarial_graph(200, seed=47)
 
 # Graph 11: Extreme Matching Disparity - hubs vs isolated pairs
-def _create_extreme_disparity_graph(size: int = 100):
+def _create_extreme_disparity_graph(size: int = 100, seed=None):
     """Generate graph to force GA to learn parameter tuning.
 
     Design philosophy: Make two completely different strategies yield different results.
@@ -446,9 +505,17 @@ def _create_extreme_disparity_graph(size: int = 100):
     - No greedy temptation
     - Pure connectivity matters
     - Different activation patterns → different discovery of peripheral clusters
+
+    Args:
+        size: Number of vertices
+        seed: Random seed for reproducibility. If None, graph is randomized.
+              Pass seed=48 to get the original deterministic graph.
     """
-    import random
-    random.seed(48)
+    import random as rng
+    if seed is not None:
+        rng.seed(seed)
+    else:
+        rng.seed()  # Randomize with current time/entropy
 
     vertices = list(range(1, size + 1))
     edges = []
@@ -478,10 +545,10 @@ def _create_extreme_disparity_graph(size: int = 100):
         "best_matches": [],
     }
 
-EXTREME_DISPARITY_100 = _create_extreme_disparity_graph(100)
+EXTREME_DISPARITY_100 = _create_extreme_disparity_graph(100, seed=48)
 
 # Graph 12: Competing Matchings - forces choice between competing strategies
-def _create_competing_matchings_graph(size: int = 100):
+def _create_competing_matchings_graph(size: int = 100, seed=None):
     """Generate graph with two competing complete matchings of different weights.
 
     Key insight: Create a scenario where different algorithms get stuck in different local maxima.
@@ -501,9 +568,17 @@ def _create_competing_matchings_graph(size: int = 100):
     - GA learns: Sometimes avoiding greed is better!
 
     This forces a REAL tradeoff: explore M1 (high reward, medium exploration) vs M2 (lower reward, better exploration)
+
+    Args:
+        size: Number of vertices
+        seed: Random seed for reproducibility. If None, graph is randomized.
+              Pass seed=49 to get the original deterministic graph.
     """
-    import random
-    random.seed(49)
+    import random as rng
+    if seed is not None:
+        rng.seed(seed)
+    else:
+        rng.seed()  # Randomize with current time/entropy
 
     vertices = list(range(1, size + 1))
     edges = []
@@ -552,10 +627,10 @@ def _create_competing_matchings_graph(size: int = 100):
         "best_matches": [],
     }
 
-COMPETING_100 = _create_competing_matchings_graph(100)
+COMPETING_100 = _create_competing_matchings_graph(100, seed=49)
 
 # Easy access
-GRAPHS = [GRID_4x4, K5_CLUSTERS, STAR_WITH_TAIL, RANDOM_DENSE_GRAPH_1K, CLUSTERED_GRAPH_1K, SCALE_FREE_GRAPH_1K, BIPARTITE_GRAPH_1K, CONFLICT_GRAPH_1K, GREEDY_TRAP_100, ADVERSARIAL_100, EXTREME_DISPARITY_100, COMPETING_100]
+GRAPHS = [_create_clustered_graph, GRID_4x4, K5_CLUSTERS, STAR_WITH_TAIL, RANDOM_DENSE_GRAPH_1K, CLUSTERED_GRAPH_1K, SCALE_FREE_GRAPH_1K, BIPARTITE_GRAPH_1K, CONFLICT_GRAPH_1K, GREEDY_TRAP_100, ADVERSARIAL_100, EXTREME_DISPARITY_100, COMPETING_100]
 
 
 def get_graph(name):
@@ -564,3 +639,22 @@ def get_graph(name):
         if g["name"].lower() == name.lower():
             return g
     raise ValueError(f"Graph '{name}' not found. Available: {[g['name'] for g in GRAPHS]}")
+
+
+def get_graph_seed_info():
+    """Return information about default seeds for each graph type.
+
+    Returns:
+        dict: Mapping of graph creation function to its default seed
+    """
+    return {
+        "random_dense_graph": 42,
+        "clustered_graph": 43,
+        "scale_free_graph": 44,
+        "bipartite_graph": 45,
+        "conflict_graph": 45,
+        "greedy_trap_graph": 46,
+        "adversarial_graph": 47,
+        "extreme_disparity_graph": 48,
+        "competing_matchings_graph": 49,
+    }

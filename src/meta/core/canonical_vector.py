@@ -20,7 +20,7 @@ Parameters:
     - itai_timeout_rounds: Timeout before reset [1, 20]
 
   [8-9]   Cascading Loop Control
-    - max_iterations: Max cascading loop iterations [5, 100]
+    - max_iterations: Max cascading loop iterations [5, 20] (reduced from [5, 100])
     - convergence_threshold: Min improvement to continue [0, 0.1]
 
 Total: 10 parameters (node selection parameters removed)
@@ -101,7 +101,7 @@ class CanonicalVector:
             luby_coeff_round: Round number coefficient ([-1, 1]), random if None
             luby_coeff_weight: Weight coefficient ([-1, 1]), random if None
             itai_timeout_rounds: Timeout rounds ([1, 20]), random if None
-            max_iterations: Max iterations ([5, 100]), random if None
+            max_iterations: Max iterations ([5, 20]), random if None (reduced from [5, 100])
             convergence_threshold: Min improvement threshold ([0, 0.1]), random if None
         """
 
@@ -118,7 +118,9 @@ class CanonicalVector:
         self.itai_timeout_rounds = itai_timeout_rounds if itai_timeout_rounds is not None else random.randint(1, 20)
 
         # Meta-algorithm - use random if None
-        self.max_iterations = max_iterations if max_iterations is not None else random.randint(5, 100)
+        # Reduced range from [5, 100] to [5, 20] for better performance
+        # Prevents wildly variable evaluation times while still allowing reasonable iteration counts
+        self.max_iterations = max_iterations if max_iterations is not None else random.randint(5, 20)
         self.convergence_threshold = convergence_threshold if convergence_threshold is not None else random.uniform(0.0, 0.1)
 
     def validate(self) -> Tuple[bool, str | None]:
@@ -128,7 +130,7 @@ class CanonicalVector:
         - All coefficients in [-1, 1]
         - Base probability in [0, 1]
         - timeout_rounds in [1, 20]
-        - max_iterations in [5, 100]
+        - max_iterations in [5, 20] (reduced from [5, 100])
         - convergence_threshold in [0, 0.1]
 
         Returns:
@@ -149,8 +151,8 @@ class CanonicalVector:
             (self.luby_coeff_weight, -1.0, 1.0, "luby_coeff_weight"),
             # Itai timeout [1, 20]
             (self.itai_timeout_rounds, 1, 20, "itai_timeout_rounds"),
-            # Meta parameters
-            (self.max_iterations, 5, 100, "max_iterations"),
+            # Meta parameters (max_iterations reduced from [5, 100] to [5, 20])
+            (self.max_iterations, 5, 20, "max_iterations"),
             (self.convergence_threshold, 0.0, 0.1, "convergence_threshold"),
         ]
 
@@ -229,7 +231,7 @@ class CanonicalVector:
             luby_coeff_round=random.uniform(-1.0, 1.0),
             luby_coeff_weight=random.uniform(-1.0, 1.0),
             itai_timeout_rounds=random.randint(1, 20),
-            max_iterations=random.randint(5, 100),
+            max_iterations=random.randint(5, 20),  # Reduced from (5, 100)
             convergence_threshold=random.uniform(0.0, 0.1),
         )
 

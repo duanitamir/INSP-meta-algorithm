@@ -1,6 +1,29 @@
 """Configuration object for GA system consolidating all tunable parameters."""
 
 from dataclasses import dataclass
+from typing import Union, Tuple
+
+
+def _validate_parameter(
+    value: Union[float, int],
+    min_val: Union[float, int],
+    max_val: Union[float, int],
+    param_name: str,
+) -> Tuple[bool, str | None]:
+    """Validate a single parameter is within bounds.
+
+    Args:
+        value: The parameter value to check
+        min_val: Minimum allowed value (inclusive)
+        max_val: Maximum allowed value (inclusive)
+        param_name: Name of parameter (for error messages)
+
+    Returns:
+        (True, None) if valid, (False, error_msg) if invalid
+    """
+    if not (min_val <= value <= max_val):
+        return False, f"{param_name} must be in [{min_val}, {max_val}], got {value}"
+    return True, None
 
 
 @dataclass
@@ -45,110 +68,26 @@ class GAConfig:
         Returns:
             Tuple of (is_valid, error_message)
         """
-        if self.population_size < 2:
-            return False, "population_size must be >= 2"
+        validations = [
+            (self.population_size, 2, float('inf'), "population_size"),
+            (self.generations, 1, float('inf'), "generations"),
+            (self.mutation_rate, 0.0, 1.0, "mutation_rate"),
+            (self.elite_fraction, 0.1, 0.9, "elite_fraction"),
+            (self.early_stop_generations, 1, float('inf'), "early_stop_generations"),
+            (self.num_workers, 1, float('inf'), "num_workers"),
+            (self.max_iterations, 1, 1000, "max_iterations"),
+            (self.convergence_threshold, 0.0, 0.5, "convergence_threshold"),
+            (self.quorum_threshold, 0.1, 1.0, "quorum_threshold"),
+            (self.voting_frequency, 1, float('inf'), "voting_frequency"),
+            (self.gossip_frequency, 1, float('inf'), "gossip_frequency"),
+        ]
 
-        if self.generations < 1:
-            return False, "generations must be >= 1"
-
-        if not (0.0 <= self.mutation_rate <= 1.0):
-            return False, "mutation_rate must be in [0, 1]"
-
-        if not (0.1 <= self.elite_fraction <= 0.9):
-            return False, "elite_fraction must be in [0.1, 0.9]"
-
-        if self.early_stop_generations < 1:
-            return False, "early_stop_generations must be >= 1"
-
-        if self.num_workers < 1:
-            return False, "num_workers must be >= 1"
-
-        if not (1 <= self.max_iterations <= 1000):
-            return False, "max_iterations must be in [1, 1000]"
-
-        if not (0.0 <= self.convergence_threshold <= 0.5):
-            return False, "convergence_threshold must be in [0, 0.5]"
-
-        if not (0.1 <= self.quorum_threshold <= 1.0):
-            return False, "quorum_threshold must be in [0.1, 1.0]"
-
-        if self.voting_frequency < 1:
-            return False, "voting_frequency must be >= 1"
-
-        if self.gossip_frequency < 1:
-            return False, "gossip_frequency must be >= 1"
+        for value, min_val, max_val, name in validations:
+            is_valid, error = _validate_parameter(value, min_val, max_val, name)
+            if not is_valid:
+                return False, error or ""
 
         return True, ""
-
-    @staticmethod
-    def small_graph() -> "GAConfig":
-        """Configuration optimized for small graphs (10-100 nodes)."""
-        return GAConfig(
-            population_size=10,
-            generations=10,
-            mutation_rate=0.15,
-            elite_fraction=0.5,
-            early_stop_generations=3,
-            num_workers=2,
-            max_iterations=20,
-            convergence_threshold=0.05,
-        )
-
-    @staticmethod
-    def medium_graph() -> "GAConfig":
-        """Configuration optimized for medium graphs (100-500 nodes)."""
-        return GAConfig(
-            population_size=15,
-            generations=15,
-            mutation_rate=0.12,
-            elite_fraction=0.5,
-            early_stop_generations=4,
-            num_workers=4,
-            max_iterations=50,
-            convergence_threshold=0.05,
-        )
-
-    @staticmethod
-    def large_graph() -> "GAConfig":
-        """Configuration optimized for large graphs (500+ nodes)."""
-        return GAConfig(
-            population_size=20,
-            generations=30,
-            mutation_rate=0.10,
-            elite_fraction=0.5,
-            early_stop_generations=5,
-            num_workers=4,
-            max_iterations=100,
-            convergence_threshold=0.05,
-        )
-
-    @staticmethod
-    def aggressive_exploration() -> "GAConfig":
-        """Configuration for aggressive exploration (lower elitism, higher mutation)."""
-        return GAConfig(
-            population_size=20,
-            generations=30,
-            mutation_rate=0.20,
-            elite_fraction=0.3,
-            early_stop_generations=5,
-            num_workers=4,
-            max_iterations=100,
-            convergence_threshold=0.05,
-        )
-
-    @staticmethod
-    def conservative_exploitation() -> "GAConfig":
-        """Configuration for conservative exploitation (higher elitism, lower mutation)."""
-        return GAConfig(
-            population_size=20,
-            generations=30,
-            mutation_rate=0.08,
-            elite_fraction=0.7,
-            early_stop_generations=3,
-            num_workers=4,
-            max_iterations=100,
-            convergence_threshold=0.05,
-        )
 
     def to_dict(self) -> dict:
         """Convert config to dictionary for serialization.
