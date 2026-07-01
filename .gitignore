@@ -7,6 +7,9 @@ SESSION_STATUS.txt
 # Jupyter
 .ipynb_checkpoints/
 *.ipynb_checkpoint
+debug_matching.ipynb
+visualisation.ipynb
+veryfy_edges.ipynb
 
 # Python
 __pycache__/
