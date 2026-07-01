@@ -6,7 +6,6 @@ Uses DistributedOrchestrator (distributed algorithm) instead of centralized Casc
 from src.graph.graph_manager import GraphManager
 from src.meta.core.canonical_vector import CanonicalVector
 from src.meta.distributed.orchestrator import DistributedOrchestrator
-from src.meta.parameterizers.factory import ParameterizerFactory
 
 
 class FitnessEvaluator:
@@ -45,6 +44,9 @@ class FitnessEvaluator:
             vector.max_iterations = 20
 
         # Run distributed orchestrator with the vector
+        # Import factory here to avoid circular dependency
+        from src.meta.parameterizers.factory import ParameterizerFactory
+
         parameterizers = ParameterizerFactory.create_default()
         matching, metrics = self.orchestrator.execute(graph, vector, parameterizers)
 

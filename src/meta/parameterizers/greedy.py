@@ -5,8 +5,8 @@ from typing import Any, Dict
 from src.meta.parameterizers.base import AlgorithmParameterizer
 from src.meta.core.canonical_vector import CanonicalVector
 from src.algorithms.implementations.greedy_matching import GreedyMatching
-from src.simulation.scheduler import Scheduler
-from src.simulation.config import SimulationConfig
+from src.simulation.distributed_node import DistributedNode
+from src.communication.drivers.in_memory_driver import InMemoryDriver
 
 
 class GreedyParameterizer(AlgorithmParameterizer):
@@ -42,15 +42,19 @@ class GreedyParameterizer(AlgorithmParameterizer):
         # Create Greedy algorithm
         greedy = GreedyMatching()
 
-        # Create scheduler with extracted parameters
-        config = SimulationConfig(max_rounds=parameters["max_rounds"])
-        scheduler = Scheduler(graph, greedy, config)
+        # Create distributed node with transport driver
+        transport = InMemoryDriver(graph)
+        node = DistributedNode(node_id=0, graph=graph)
 
-        # Run scheduler until termination
-        scheduler.run_until_termination()
+        # Run algorithm until convergence (max_rounds is a safety limit)
+        max_rounds = parameters.get("max_rounds", 100)
+        for _ in range(max_rounds):
+            should_continue, _ = node.execute(greedy)
+            if not should_continue:
+                break
 
         # Extract and return matching
-        matching = greedy.extract_matching(scheduler.state_store, graph)
+        matching = node.get_matching()
 
         return matching
 

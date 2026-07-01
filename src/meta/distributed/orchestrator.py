@@ -4,12 +4,14 @@ Uses distributed components (parameter evolution, conflict resolution, convergen
 to execute the matching algorithm. For single-node evaluation, it simulates a 1-node network.
 """
 
-from typing import Dict, List, Tuple
+from typing import TYPE_CHECKING, Dict, List, Tuple
 from src.graph.graph_manager import GraphManager
 from src.meta.core.canonical_vector import CanonicalVector
-from src.meta.parameterizers.base import AlgorithmParameterizer
 from src.meta.distributed.conflict_resolver import DistributedConflictResolver
 from src.meta.distributed.convergence_detector import DistributedConvergenceDetector
+
+if TYPE_CHECKING:
+    from src.meta.parameterizers.base import AlgorithmParameterizer
 
 
 class DistributedOrchestrator:

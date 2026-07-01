@@ -1,11 +1,13 @@
 """Factory for creating parameterizer sets."""
 
-from typing import List
+from typing import TYPE_CHECKING, List
 
-from src.meta.parameterizers.base import AlgorithmParameterizer
 from src.meta.parameterizers.greedy import GreedyParameterizer
 from src.meta.parameterizers.itai import ItaiParameterizer
 from src.meta.parameterizers.luby import LubyParameterizer
+
+if TYPE_CHECKING:
+    from src.meta.parameterizers.base import AlgorithmParameterizer
 
 
 class ParameterizerFactory:

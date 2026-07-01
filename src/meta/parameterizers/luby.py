@@ -5,8 +5,8 @@ from typing import Any, Callable, Dict
 from src.meta.parameterizers.base import AlgorithmParameterizer
 from src.meta.core.canonical_vector import CanonicalVector
 from src.algorithms.implementations.luby_randomized import LubyRandomizedMatching
-from src.simulation.scheduler import Scheduler
-from src.simulation.config import SimulationConfig
+from src.simulation.distributed_node import DistributedNode
+from src.communication.drivers.in_memory_driver import InMemoryDriver
 
 
 class LubyParameterizer(AlgorithmParameterizer):
@@ -70,15 +70,19 @@ class LubyParameterizer(AlgorithmParameterizer):
             activation_function=activation_fn,
         )
 
-        # Create scheduler with extracted parameters
-        config = SimulationConfig(max_rounds=parameters["max_rounds"])
-        scheduler = Scheduler(graph, luby, config)
+        # Create distributed node with transport driver
+        transport = InMemoryDriver(graph)
+        node = DistributedNode(node_id=0, graph=graph)
 
-        # Run scheduler until termination
-        scheduler.run_until_termination()
+        # Run algorithm until convergence (max_rounds is a safety limit)
+        max_rounds = parameters.get("max_rounds", 100)
+        for _ in range(max_rounds):
+            should_continue, _ = node.execute(luby)
+            if not should_continue:
+                break
 
         # Extract and return matching
-        matching = luby.extract_matching(scheduler.state_store, graph)
+        matching = node.get_matching()
 
         return matching
 

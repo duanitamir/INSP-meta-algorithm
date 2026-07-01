@@ -1,7 +1,7 @@
 from src.graph import GraphManager
 from src.state import StateStore, NodeState
 from src.communication import Message, MessageQueue
-from src.simulation import Scheduler, SimulationConfig
+from src.simulation import SimulationConfig
 from src.metrics import MetricsCollector, MetricsSnapshot
 from src.visualization import GraphVisualizer
 
@@ -11,7 +11,6 @@ __all__ = [
     "NodeState",
     "Message",
     "MessageQueue",
-    "Scheduler",
     "SimulationConfig",
     "MetricsCollector",
     "MetricsSnapshot",
