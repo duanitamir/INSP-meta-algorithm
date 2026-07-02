@@ -217,24 +217,10 @@ class LubyParameterizer(AlgorithmParameterizer):
         graph = node_context.graph
         node_id = node_context.node_id
 
-        def activation_fn(nid: int) -> float:
-            """Compute adaptive activation probability for a node."""
-            if nid != node_id:
-                return base_prob
-
-            # Normalize degree
-            degree = graph.degree(nid)
+        # Cache global graph statistics (computed once per round, not per node)
+        if not hasattr(self, "_cached_round") or self._cached_round != node_context.round_number:
             all_degrees = [graph.degree(v) for v in graph.vertices()]
-            max_degree = max(all_degrees) if all_degrees else 1
-            normalized_degree = degree / max_degree if max_degree > 0 else 0
-
-            # Normalize edge weight
-            neighbors = list(graph.neighbors(nid))
-            if neighbors:
-                weights = [graph.get_edge_weight(nid, n) for n in neighbors]
-                avg_weight = sum(weights) / len(weights)
-            else:
-                avg_weight = 0.0
+            self._max_degree = max(all_degrees) if all_degrees else 1
 
             all_weights = []
             for v in graph.vertices():
@@ -244,15 +230,57 @@ class LubyParameterizer(AlgorithmParameterizer):
                     all_weights.append(sum(vweights) / len(vweights))
                 else:
                     all_weights.append(0.0)
-            max_weight = max(all_weights) if all_weights else 1.0
-            normalized_weight = avg_weight / max_weight if max_weight > 0 else 0
+            self._max_weight = max(all_weights) if all_weights else 1.0
+
+            # Also cache max_neighbors for clustering normalization
+            self._max_neighbors = max(all_degrees) if all_degrees else 1
+
+            self._cached_round = node_context.round_number
+
+        def activation_fn(nid: int) -> float:
+            """Compute adaptive activation probability for a node."""
+            if nid != node_id:
+                return base_prob
+
+            # Normalize degree
+            degree = graph.degree(nid)
+            normalized_degree = degree / self._max_degree if self._max_degree > 0 else 0
+
+            # Count unmatched neighbors (neighbors not yet in state)
+            neighbors = list(graph.neighbors(nid))
+            unmatched_count = sum(1 for n in neighbors if not node_context.state_store.get_node_state(n).is_matched())
+            normalized_neighbors = unmatched_count / max(self._max_neighbors, 1)
+
+            # Clustering coefficient (local - number of edges between neighbors)
+            if len(neighbors) > 1:
+                edges_between = 0
+                for i, n1 in enumerate(neighbors):
+                    for n2 in neighbors[i+1:]:
+                        if graph.has_edge(n1, n2):
+                            edges_between += 1
+                max_edges = len(neighbors) * (len(neighbors) - 1) / 2
+                clustering = edges_between / max_edges if max_edges > 0 else 0.0
+            else:
+                clustering = 0.0
+
+            # Count matched neighbors
+            matched_count = sum(1 for n in neighbors if node_context.state_store.get_node_state(n).is_matched())
+            normalized_matched = matched_count / max(len(neighbors), 1) if neighbors else 0.0
+
+            # Normalize edge weight
+            if neighbors:
+                weights = [graph.get_edge_weight(nid, n) for n in neighbors]
+                avg_weight = sum(weights) / len(weights)
+            else:
+                avg_weight = 0.0
+            normalized_weight = avg_weight / self._max_weight if self._max_weight > 0 else 0
 
             # Adaptive probability
             prob = base_prob
             prob += coeff_degree * (normalized_degree - 0.5)
-            prob += coeff_neighbors * (normalized_degree - 0.5)
-            prob += coeff_clustering * (normalized_degree - 0.5)
-            prob += coeff_matched * (normalized_degree - 0.5)
+            prob += coeff_neighbors * (normalized_neighbors - 0.5)
+            prob += coeff_clustering * (clustering - 0.5)
+            prob += coeff_matched * (normalized_matched - 0.5)
             prob += coeff_round * (node_context.round_number / 100.0 - 0.5)
             prob += coeff_weight * (normalized_weight - 0.5)
 
