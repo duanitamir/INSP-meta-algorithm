@@ -211,12 +211,12 @@ def test_case_sparse():
 
 
 @pytest.fixture
-def simple_graph():
+def simple_graph(simple_path_graph):
     """Backward compatible: simple path graph."""
-    return simple_path_graph()
+    return simple_path_graph.graph
 
 
 @pytest.fixture
-def medium_graph():
+def medium_graph(medium_clustered_graph):
     """Backward compatible: medium clustered graph."""
-    return medium_clustered_graph()
+    return medium_clustered_graph.graph

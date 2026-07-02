@@ -10,9 +10,13 @@ Each algorithm wrapper:
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict
+from typing import TYPE_CHECKING, Any, Dict, Tuple, List
 
 from src.meta.core.canonical_vector import CanonicalVector
+from src.state.node_state import NodeState
+
+if TYPE_CHECKING:
+    from src.simulation.node_context import NodeContext
 
 
 class AlgorithmParameterizer(ABC):
@@ -61,6 +65,32 @@ class AlgorithmParameterizer(ABC):
         self._validate_output(matching)
 
         return matching
+
+    def execute_local_step(
+        self, node_context: "NodeContext"
+    ) -> Tuple[NodeState, List[Dict[str, Any]]]:
+        """Execute algorithm for one node in one round (Phase 1: Per-Node Interface).
+
+        This is the new per-node interface that parameterizers should implement.
+        Currently provides default implementation that wraps existing algorithms
+        via LocalAlgorithmAdapter, but can be overridden for efficiency.
+
+        Args:
+            node_context: NodeContext with node_id, state, messages, graph, vector, etc.
+
+        Returns:
+            Tuple of (new_node_state, outgoing_messages)
+
+        Raises:
+            NotImplementedError: If subclass doesn't provide optimized implementation
+        """
+
+        # Default: Use LocalAlgorithmAdapter to wrap existing algorithm
+        # This maintains backward compatibility while providing per-node interface
+        raise NotImplementedError(
+            f"{self.__class__.__name__} should implement execute_local_step() "
+            "for Phase 1 per-node execution. Default wrapper not yet implemented."
+        )
 
     @abstractmethod
     def _extract_parameters(self, canonical_vector: CanonicalVector) -> Dict[str, Any]:

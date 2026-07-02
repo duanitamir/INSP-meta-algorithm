@@ -2,19 +2,19 @@
 
 Contains:
 - DistributedOrchestrator: Main orchestration, replaces CascadingLoop
-- DistributedConflictResolver: Edge voting for conflict resolution (replaces ConflictResolver)
 - DistributedConvergenceDetector: Quorum-based termination detection
 - DistributedParameterEvolver: Gossip-based GA evolution per node
+
+Note: Conflict resolution is now handled by DistributedNode._local_conflict_resolution()
+via endpoint voting in Phase 4.
 """
 
 from .orchestrator import DistributedOrchestrator
-from .conflict_resolver import DistributedConflictResolver
 from .convergence_detector import DistributedConvergenceDetector
 from .parameter_evolver import DistributedParameterEvolver
 
 __all__ = [
     "DistributedOrchestrator",
-    "DistributedConflictResolver",
     "DistributedConvergenceDetector",
     "DistributedParameterEvolver",
 ]

@@ -32,7 +32,7 @@ from tests.fixtures.conftest_graphs import (
 @pytest.fixture
 def state_store_simple(simple_graph):
     """Create a state store for the simple graph."""
-    state_store = StateStore(simple_graph.graph)
+    state_store = StateStore(simple_graph)
     return state_store
 
 

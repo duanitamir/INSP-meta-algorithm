@@ -1,209 +1,145 @@
-"""Distributed orchestrator replacing centralized CascadingLoop.
+"""Distributed orchestrator - supervises autonomous nodes instead of controlling them.
 
-Uses distributed components (parameter evolution, conflict resolution, convergence detection)
-to execute the matching algorithm. For single-node evaluation, it simulates a 1-node network.
+Phase 6: Parallel Node Execution
+- Creates one DistributedNode per graph vertex (autonomous execution)
+- Nodes execute in parallel via ParallelNodeExecutor (multi-core efficiency)
+- Nodes coordinate via message passing
+- Nodes run ALL 3 algorithms autonomously
+- Nodes make own decisions
+- Orchestrator supervises rounds, delivers messages, collects results
+
+Only centralized: Graph (read-only), CanonicalVector (immutable), Transport (communication).
 """
 
-from typing import TYPE_CHECKING, Dict, List, Tuple
+from typing import Dict, List, Tuple
 from src.graph.graph_manager import GraphManager
 from src.meta.core.canonical_vector import CanonicalVector
-from src.meta.distributed.conflict_resolver import DistributedConflictResolver
-from src.meta.distributed.convergence_detector import DistributedConvergenceDetector
-
-if TYPE_CHECKING:
-    from src.meta.parameterizers.base import AlgorithmParameterizer
+from src.simulation.distributed_node import DistributedNode
+from src.simulation.parallel_node_executor import ParallelNodeExecutor
 
 
 class DistributedOrchestrator:
-    """Orchestrates matching execution using distributed protocols.
+    """Supervises autonomous nodes in truly distributed matching execution.
 
-    Replaces centralized CascadingLoop with:
-    - DistributedConflictResolver for edge voting (instead of central merger)
-    - DistributedConvergenceDetector for autonomous termination (instead of central loop)
+    Creates N DistributedNode instances (one per vertex) and coordinates their
+    execution. Each node runs algorithms autonomously and coordinates via message
+    passing. This is a TRUE distributed simulation.
 
-    For single-node evaluation, simulates a 1-node network using distributed components.
+    Centralized only: Graph, CanonicalVector, Transport layer.
+    Distributed: State, algorithm execution, decision-making.
     """
 
-    def __init__(self) -> None:
-        """Initialize distributed orchestrator with components."""
-        self.conflict_resolver = DistributedConflictResolver(
-            voting_frequency=1, threshold=0.5
-        )
-        self.convergence_detector = DistributedConvergenceDetector(
-            convergence_threshold=0.05, quorum_threshold=0.5, max_iterations=100
-        )
-
-    def _is_maximal_matching(
-        self, matching: Dict[int, int], graph: GraphManager
-    ) -> bool:
-        """Check if matching is truly maximal (no more edges can be added).
+    def __init__(self, max_workers: int = 4) -> None:
+        """Initialize orchestrator as supervisor.
 
         Args:
-            matching: Symmetric matching dictionary (u -> v and v -> u present)
-            graph: GraphManager with vertices and edges
-
-        Returns:
-            bool: True if matching is maximal, False if more edges can be added
+            max_workers: Number of concurrent worker threads for parallel node execution
         """
-        matched_nodes = set(matching.keys())
-        unmatched_nodes = graph.vertices() - matched_nodes
-
-        if len(unmatched_nodes) < 2:
-            return True
-
-        # Check if any edge exists between unmatched nodes
-        for u in unmatched_nodes:
-            for v in unmatched_nodes:
-                if u < v and graph._graph.has_edge(u, v):
-                    return False
-
-        return True
+        self.executor = ParallelNodeExecutor(max_workers=max_workers)
 
     def execute(
         self,
         graph: GraphManager,
         canonical_vector: CanonicalVector,
-        parameterizers: List[AlgorithmParameterizer],
+        parameterizers: List = None,  # Nodes create their own parameterizers
     ) -> Tuple[Dict[int, int], Dict]:
-        """Execute distributed matching algorithm until convergence.
+        """Execute matching using autonomous distributed nodes (Phase 5 simplification).
 
-        Uses distributed conflict resolution and convergence detection instead of
-        centralized components.
+        Pure round scheduler: Creates nodes, runs rounds, delivers messages, collects results.
+        All decision logic moved to nodes. Orchestrator is stateless.
 
         Args:
-            graph: GraphManager with vertices and edges
-            canonical_vector: 10-parameter canonical vector with iteration controls
-            parameterizers: List of 3 AlgorithmParameterizer instances (Greedy, Itai, Luby)
+            graph: Shared read-only graph
+            canonical_vector: Shared immutable parameter chromosome
+            parameterizers: Ignored (nodes create their own)
 
         Returns:
             Tuple of:
-            - Dict[int, int]: Final symmetric matching
+            - Dict[int, int]: Final matching from nodes (nodes handle symmetry)
             - dict: Metrics with keys:
-              - iterations: int, number of iterations executed
+              - iterations: int, number of rounds executed
               - final_weight: float, sum of matched edge weights
-              - improvements: List[float], improvement fraction per iteration
-
-        Raises:
-            ValueError: If invalid canonical vector or empty parameterizers list
         """
         is_valid, error = canonical_vector.validate()
         if not is_valid:
             raise ValueError(f"Invalid canonical vector: {error}")
 
-        if not parameterizers or len(parameterizers) == 0:
-            raise ValueError("Must provide at least one parameterizer")
+        # Create one autonomous node per graph vertex
+        nodes: Dict[int, DistributedNode] = {}
+        for node_id in graph.vertices():
+            nodes[node_id] = DistributedNode(node_id, graph)
 
-        # Initialize distributed components for single node
-        node_id = 0
-        self.conflict_resolver.initialize(node_ids=[node_id])
-        self.convergence_detector.initialize(node_ids=[node_id])
-
-        all_matched: Dict[int, int] = {}
-        previous_weight = 0.0
-        improvements: List[float] = []
+        max_iterations = int(canonical_vector.max_iterations)
         iteration = 0
 
-        max_iters = int(canonical_vector.max_iterations)
+        # PHASE 6: Parallel node execution + pure round scheduler loop
+        # All decision logic is in DistributedNode
+        while iteration < max_iterations:
+            # PHASE 6: Execute all nodes in parallel
+            all_continue = self.executor.execute_all_nodes(nodes, canonical_vector)
 
-        while iteration < max_iters:
-            # Create reduced graph (remove already matched nodes)
-            remaining_nodes = frozenset(graph.vertices() - frozenset(all_matched.keys()))
+            # Deliver messages between nodes
+            self._deliver_all_messages(nodes)
 
-            if len(remaining_nodes) == 0:
+            # Check termination: quorum voting or all nodes inactive
+            stop_votes = sum(1 for node in nodes.values() if node.convergence_vote is True)
+            if len(nodes) > 0 and (stop_votes / len(nodes)) > 0.5:
                 break
 
-            working_graph = graph.get_subgraph(remaining_nodes)
+            if not any(all_continue):
+                break
 
-            # Run all parameterizers on reduced graph
-            matchings = [param.execute(working_graph, canonical_vector) for param in parameterizers]
-
-            # Extract Greedy, Itai, Luby matchings
-            greedy_matching = matchings[0] if len(matchings) > 0 else {}
-            itai_matching = matchings[1] if len(matchings) > 1 else {}
-            luby_matching = matchings[2] if len(matchings) > 2 else {}
-
-            # Use distributed conflict resolution (voting by endpoints)
-            self.conflict_resolver.propose_edges(
-                node_id, greedy_matching, itai_matching, luby_matching
-            )
-
-            # Generate voting messages (simulate endpoint voting)
-            messages = self.conflict_resolver.broadcast_votes(
-                node_id, greedy_matching, itai_matching, luby_matching, iteration
-            )
-
-            # Single node receives its own votes
-            self.conflict_resolver.receive_votes(node_id, messages)
-
-            # Resolve conflicts via voting
-            merged = self.conflict_resolver.resolve_matches(node_id, threshold=0.5)
-
-            # Calculate weight using ORIGINAL graph (edges exist there, not in reduced working_graph)
-            current_weight = graph.calculate_matching_weight(merged)
-
-            # Calculate improvement
-            if iteration > 0:
-                improvement = (current_weight - previous_weight) / (previous_weight + 1e-10)
-                improvements.append(improvement)
-
-                # For single-node evaluation, use simple improvement threshold
-                # (distributed detector would converge too early with only 1 node)
-                convergence_threshold = canonical_vector.convergence_threshold
-                if improvement < convergence_threshold:
-                    break
-            else:
-                improvements.append(0.0)
-
-            # Add new matches to cumulative result
-            all_matched.update(merged)
-            previous_weight = current_weight
             iteration += 1
 
-            # Reset for next iteration
-            self.conflict_resolver.node_states[node_id].reset_votes()
-            self.convergence_detector.reset_convergence_votes(node_id)
-
-        # Guarantee maximal matching (with safety limit to prevent infinite loops)
-        remaining_nodes = frozenset(graph.vertices() - frozenset(all_matched.keys()))
-        maximal_iter = 0
-        max_maximal_iterations = 20  # Safety limit to prevent infinite loops
-
-        while (len(remaining_nodes) >= 2 and
-               not self._is_maximal_matching(all_matched, graph) and
-               maximal_iter < max_maximal_iterations):
-            working_graph = graph.get_subgraph(remaining_nodes)
-            matchings = [param.execute(working_graph, canonical_vector) for param in parameterizers]
-
-            greedy_matching = matchings[0] if len(matchings) > 0 else {}
-            itai_matching = matchings[1] if len(matchings) > 1 else {}
-            luby_matching = matchings[2] if len(matchings) > 2 else {}
-
-            self.conflict_resolver.propose_edges(
-                node_id, greedy_matching, itai_matching, luby_matching
-            )
-
-            messages = self.conflict_resolver.broadcast_votes(
-                node_id, greedy_matching, itai_matching, luby_matching, iteration
-            )
-            self.conflict_resolver.receive_votes(node_id, messages)
-
-            merged = self.conflict_resolver.resolve_matches(node_id, threshold=0.5)
-
-            if not merged:  # No more edges found
-                break
-
-            all_matched.update(merged)
-            remaining_nodes = frozenset(graph.vertices() - frozenset(all_matched.keys()))
-            maximal_iter += 1
+        # Collect results (nodes already handle symmetric matching via endpoint voting)
+        matching, final_weight = self._collect_results(nodes, graph)
 
         return (
-            all_matched,
+            matching,
             {
-                "iterations": len(improvements),
-                "final_weight": graph.calculate_matching_weight(all_matched),
-                "improvements": improvements,
+                "iterations": iteration,
+                "final_weight": final_weight,
             },
         )
+
+    def _deliver_all_messages(self, nodes: Dict[int, DistributedNode]) -> None:
+        """Deliver all messages between nodes (simulates network transport).
+
+        Args:
+            nodes: Dict of node_id -> DistributedNode
+        """
+        # Collect all outgoing messages from all nodes
+        all_messages = []
+        for node in nodes.values():
+            outgoing = node.outbox.get_messages(node.id)
+            all_messages.extend(outgoing)
+
+        # Deliver to recipients
+        for msg in all_messages:
+            if msg.recipient in nodes:
+                nodes[msg.recipient].inbox.send(msg)
+
+    def _collect_results(
+        self, nodes: Dict[int, DistributedNode], graph: GraphManager
+    ) -> Tuple[Dict[int, int], float]:
+        """Collect final matching from all nodes.
+
+        Nodes handle symmetric matching via endpoint voting in Phase 4.
+        Orchestrator just gathers results.
+
+        Args:
+            nodes: Dict of node_id -> DistributedNode
+            graph: GraphManager for weight calculation
+
+        Returns:
+            Tuple of (matching dict, final weight)
+        """
+        final_matching: Dict[int, int] = {}
+        for node in nodes.values():
+            final_matching.update(node.get_matching())
+
+        final_weight = graph.calculate_matching_weight(final_matching)
+        return final_matching, final_weight
 
     def name(self) -> str:
         """Return orchestrator name."""

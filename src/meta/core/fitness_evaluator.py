@@ -1,27 +1,26 @@
 """Fitness evaluator for scoring CanonicalVectors in genetic algorithm.
 
-Uses DistributedOrchestrator (distributed algorithm) instead of centralized CascadingLoop.
+Uses CentralizedOrchestrator for fast GA fitness evaluation.
 """
 
 from src.graph.graph_manager import GraphManager
 from src.meta.core.canonical_vector import CanonicalVector
-from src.meta.distributed.orchestrator import DistributedOrchestrator
+from src.simulation.centralized_orchestrator import CentralizedOrchestrator
 
 
 class FitnessEvaluator:
-    """Evaluates fitness of a CanonicalVector using distributed orchestration.
+    """Evaluates fitness of a CanonicalVector using centralized orchestration.
 
-    Uses DistributedOrchestrator (distributed conflict resolution + convergence detection)
-    instead of centralized CascadingLoop. Fitness is measured as the total weight of the
-    matching produced. Higher weights indicate better fitness.
+    Uses CentralizedOrchestrator for fast fitness evaluation in GA.
+    Fitness is measured as the total weight of the matching produced.
     """
 
     def __init__(self) -> None:
-        """Initialize fitness evaluator with distributed orchestrator."""
-        self.orchestrator = DistributedOrchestrator()
+        """Initialize fitness evaluator with centralized orchestrator."""
+        self.orchestrator = CentralizedOrchestrator()
 
     def evaluate(self, graph: GraphManager, vector: CanonicalVector) -> float:
-        """Evaluate fitness of a vector on given graph using distributed algorithm.
+        """Evaluate fitness of a vector on given graph.
 
         Args:
             graph: GraphManager instance
@@ -37,21 +36,24 @@ class FitnessEvaluator:
         if not is_valid:
             raise ValueError(f"Invalid vector: {error}")
 
-        # Cap max_iterations to prevent expensive iterations
-        # Matching algorithms typically converge in 3-5 iterations (maximal matching found)
-        # Setting cap at 20 provides safe upper bound while ensuring reasonable evaluation time
-        if vector.max_iterations > 20:
-            vector.max_iterations = 20
+        # Setup orchestrator with graph
+        self.orchestrator.setup(graph)
 
-        # Run distributed orchestrator with the vector
-        # Import factory here to avoid circular dependency
-        from src.meta.parameterizers.factory import ParameterizerFactory
+        # Run until convergence with max iterations from vector
+        matching = self.orchestrator.run_until_convergence(
+            max_rounds=int(vector.max_iterations),
+            vector=vector
+        )
 
-        parameterizers = ParameterizerFactory.create_default()
-        matching, metrics = self.orchestrator.execute(graph, vector, parameterizers)
+        # Calculate weight as fitness score
+        if matching:
+            weight = 0.0
+            for u, v in matching.items():
+                if u < v:  # Count each edge once
+                    weight += graph.get_edge_weight(u, v)
+            return weight
 
-        # Return final weight as fitness score
-        return metrics["final_weight"]
+        return 0.0
 
     def name(self) -> str:
         """Return evaluator name."""

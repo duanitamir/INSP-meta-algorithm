@@ -1,5 +1,6 @@
 from typing import Dict, List, Any
 from dataclasses import dataclass
+from threading import RLock
 from src.graph.graph_manager import GraphManager
 from src.state.node_state import NodeState
 from src.utils.types import RoundNumber
@@ -62,7 +63,7 @@ class StateSnapshot:
 
 
 class StateStore:
-    """Central repository for all node states."""
+    """Central repository for all node states (thread-safe with per-node locks)."""
 
     def __init__(self, graph: GraphManager):
         self.graph = graph
@@ -70,14 +71,19 @@ class StateStore:
         self._meta_state = MetaState(round_num=RoundNumber(0))
         self._snapshots: List[StateSnapshot] = []
 
+        # Fine-grained per-node locks for thread-safe parallel execution (Option 2)
+        self._node_locks: Dict[int, RLock] = {}
+
         for vertex_id in graph.vertices():
             self._node_states[vertex_id] = NodeState(vertex_id)
+            self._node_locks[vertex_id] = RLock()  # Each node gets its own lock
 
     def get_node_state(self, node_id: int) -> NodeState:
-        """Get state for a node (defensive copy)."""
+        """Get state for a node (defensive copy, thread-safe via per-node lock)."""
         if node_id not in self._node_states:
             raise ValueError(f"Node {node_id} not in state store")
-        return self._node_states[node_id].clone()
+        with self._node_locks[node_id]:
+            return self._node_states[node_id].clone()
 
     def get_all_states(self) -> Dict[int, NodeState]:
         """Get all node states (defensive copy)."""
@@ -88,10 +94,11 @@ class StateStore:
         return self._meta_state
 
     def update_node_state(self, node_id: int, state: NodeState) -> None:
-        """Update state for a node."""
+        """Update state for a node (thread-safe via per-node lock)."""
         if node_id not in self._node_states:
             raise ValueError(f"Node {node_id} not in state store")
-        self._node_states[node_id] = state.clone()
+        with self._node_locks[node_id]:
+            self._node_states[node_id] = state.clone()
 
     def update_all_states(self, states: Dict[int, NodeState]) -> None:
         """Atomically update all node states."""

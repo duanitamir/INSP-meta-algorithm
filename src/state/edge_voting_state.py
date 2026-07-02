@@ -79,7 +79,8 @@ class EdgeVotingState(DistributedNodeState):
             Set of edges that have consensus
         """
         consensus = set()
-        for edge in self.received_votes.keys():
+        # Create a list of keys first to avoid "dictionary changed size during iteration"
+        for edge in list(self.received_votes.keys()):
             votes = self.received_votes[edge]
             if votes and (sum(1 for v in votes if v) / len(votes)) > threshold:
                 consensus.add(edge)

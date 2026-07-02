@@ -80,7 +80,7 @@ class TestGreedyParameterizerExecution:
 
         # Different vectors should produce same result (Greedy has no params)
         vector1 = CanonicalVector()
-        vector2 = CanonicalVector(max_iterations=100)
+        vector2 = CanonicalVector(max_iterations=15)
 
         parameterizer = GreedyParameterizer()
         result1 = parameterizer.execute(graph, vector1)
@@ -248,7 +248,7 @@ class TestLubyParameterizerExecution:
         graph.add_edge(4, 5, 1.0)
 
         vector_few = CanonicalVector(max_iterations=5)
-        vector_many = CanonicalVector(max_iterations=50)
+        vector_many = CanonicalVector(max_iterations=20)
 
         parameterizer = LubyParameterizer()
 
@@ -363,7 +363,7 @@ class TestParameterizerConsistency:
         graph.add_edge(1, 2, 1.0)
 
         # Vector with out-of-range parameter (will fail validation)
-        invalid_vector = CanonicalVector(max_iterations=200)
+        invalid_vector = CanonicalVector(max_iterations=100)
 
         parameterizers = [
             GreedyParameterizer(),
