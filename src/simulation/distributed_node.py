@@ -4,6 +4,7 @@ from typing import Dict, List, Tuple, Any
 from src.state.node_state import NodeState
 from src.communication.message import Message
 from src.communication.message_queue import MessageQueue
+from src.communication.node_communicator import NodeCommunicator
 from src.graph.graph_manager import GraphManager
 from src.metrics.metrics_collector import MetricsCollector
 from src.meta.messages.edge_conflict_protocol import (
@@ -43,6 +44,7 @@ class DistributedNode:
         # Communication
         self.inbox = MessageQueue(shared_graph)  # Messages TO this node
         self.outbox = MessageQueue(shared_graph)  # Messages FROM this node
+        self.communicator = NodeCommunicator(node_id, self.outbox, self.inbox)
 
         # Execution tracking
         self.round_number = 0
