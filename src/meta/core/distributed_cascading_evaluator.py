@@ -46,10 +46,8 @@ class DistributedCascadingEvaluator:
         if not is_valid:
             raise ValueError(f"Invalid vector: {error}")
 
-        # Import parameterizers here to avoid circular imports
-        from src.meta.parameterizers.greedy import GreedyParameterizer
-        from src.meta.parameterizers.itai import ItaiParameterizer
-        from src.meta.parameterizers.luby import LubyParameterizer
+        # Import parameterizer here to avoid circular imports
+        from src.meta.parameterizers.algorithm_parameterizer import UnifiedAlgorithmParameterizer
 
         # Get parameters from vector
         max_cascades = int(vector.max_iterations)
@@ -63,9 +61,9 @@ class DistributedCascadingEvaluator:
         for cascade_round in range(max_cascades):
             # Create fresh parameterizers for this cascade round
             parameterizers = [
-                GreedyParameterizer(),
-                ItaiParameterizer(),
-                LubyParameterizer(),
+                UnifiedAlgorithmParameterizer("greedy"),
+                UnifiedAlgorithmParameterizer("itai"),
+                UnifiedAlgorithmParameterizer("luby"),
             ]
 
             # Run all 3 parameterizers (each node sees only unmatched neighbors)

@@ -2,9 +2,7 @@
 
 from typing import TYPE_CHECKING, List
 
-from src.meta.parameterizers.greedy import GreedyParameterizer
-from src.meta.parameterizers.itai import ItaiParameterizer
-from src.meta.parameterizers.luby import LubyParameterizer
+from src.meta.parameterizers.algorithm_parameterizer import UnifiedAlgorithmParameterizer
 
 if TYPE_CHECKING:
     from src.meta.parameterizers.base import AlgorithmParameterizer
@@ -18,35 +16,35 @@ class ParameterizerFactory:
     """
 
     @staticmethod
-    def create_default() -> List[AlgorithmParameterizer]:
+    def create_default() -> List["AlgorithmParameterizer"]:
         """Create default 3-algorithm set (Greedy, Itai, Luby).
 
         Returns:
             List[AlgorithmParameterizer]: Standard parameterizers for meta-algorithm
         """
         return [
-            GreedyParameterizer(),
-            ItaiParameterizer(),
-            LubyParameterizer(),
+            UnifiedAlgorithmParameterizer("greedy"),
+            UnifiedAlgorithmParameterizer("itai"),
+            UnifiedAlgorithmParameterizer("luby"),
         ]
 
     @staticmethod
-    def create_luby_only() -> List[AlgorithmParameterizer]:
+    def create_luby_only() -> List["AlgorithmParameterizer"]:
         """Create Luby-only set (for debugging/baseline).
 
         Returns:
             List[AlgorithmParameterizer]: Single Luby parameterizer
         """
-        return [LubyParameterizer()]
+        return [UnifiedAlgorithmParameterizer("luby")]
 
     @staticmethod
-    def create_greedy_itai() -> List[AlgorithmParameterizer]:
+    def create_greedy_itai() -> List["AlgorithmParameterizer"]:
         """Create Greedy + Itai set (deterministic algorithms).
 
         Returns:
             List[AlgorithmParameterizer]: Greedy and Itai parameterizers
         """
         return [
-            GreedyParameterizer(),
-            ItaiParameterizer(),
+            UnifiedAlgorithmParameterizer("greedy"),
+            UnifiedAlgorithmParameterizer("itai"),
         ]

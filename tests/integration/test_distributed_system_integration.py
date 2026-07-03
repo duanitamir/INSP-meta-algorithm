@@ -11,9 +11,7 @@ from src.meta.core.canonical_vector import CanonicalVector
 from src.meta.distributed.parameter_evolver import DistributedParameterEvolver
 from src.meta.distributed.conflict_resolver import DistributedConflictResolver
 from src.meta.distributed.convergence_detector import DistributedConvergenceDetector
-from src.meta.parameterizers.greedy import GreedyParameterizer
-from src.meta.parameterizers.itai import ItaiParameterizer
-from src.meta.parameterizers.luby import LubyParameterizer
+from src.meta.parameterizers.algorithm_parameterizer import UnifiedAlgorithmParameterizer
 from src.meta.core.fitness_evaluator import FitnessEvaluator
 
 

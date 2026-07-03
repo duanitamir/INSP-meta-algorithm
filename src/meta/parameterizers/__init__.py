@@ -2,22 +2,16 @@
 
 Contains:
 - AlgorithmParameterizer: Abstract base class (template method pattern)
-- GreedyParameterizer: Greedy matching with canonical vector parameters
-- ItaiParameterizer: Itai-Israeli matching with canonical vector parameters
-- LubyParameterizer: Luby randomized with adaptive activation from parameters
+- UnifiedAlgorithmParameterizer: Unified parameterizer for all 3 algorithms
 - ParameterizerFactory: Factory for creating standard parameterizer sets
 """
 
 from .base import AlgorithmParameterizer
-from .greedy import GreedyParameterizer
-from .itai import ItaiParameterizer
-from .luby import LubyParameterizer
+from .algorithm_parameterizer import UnifiedAlgorithmParameterizer
 from .factory import ParameterizerFactory
 
 __all__ = [
     "AlgorithmParameterizer",
-    "GreedyParameterizer",
-    "ItaiParameterizer",
-    "LubyParameterizer",
+    "UnifiedAlgorithmParameterizer",
     "ParameterizerFactory",
 ]

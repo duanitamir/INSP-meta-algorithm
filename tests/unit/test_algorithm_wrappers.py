@@ -2,9 +2,7 @@
 
 import pytest
 from src.meta.core.canonical_vector import CanonicalVector
-from src.meta.parameterizers.greedy import GreedyParameterizer
-from src.meta.parameterizers.itai import ItaiParameterizer
-from src.meta.parameterizers.luby import LubyParameterizer
+from src.meta.parameterizers.algorithm_parameterizer import UnifiedAlgorithmParameterizer
 from src.graph.graph_manager import GraphManager
 
 
@@ -13,17 +11,17 @@ class TestGreedyParameterizerBasics:
 
     def test_greedy_initialization(self):
         """Should initialize without errors."""
-        parameterizer = GreedyParameterizer()
+        parameterizer = UnifiedAlgorithmParameterizer("greedy")
         assert parameterizer is not None
 
     def test_greedy_name(self):
         """Should return correct algorithm name."""
-        parameterizer = GreedyParameterizer()
+        parameterizer = UnifiedAlgorithmParameterizer("greedy")
         assert parameterizer.name() == "Greedy"
 
     def test_greedy_repr(self):
         """Should have string representation."""
-        parameterizer = GreedyParameterizer()
+        parameterizer = UnifiedAlgorithmParameterizer("greedy")
         result = repr(parameterizer)
         assert "Greedy" in result
 
@@ -40,7 +38,7 @@ class TestGreedyParameterizerExecution:
         graph.add_edge(2, 3, 1.0)
 
         vector = CanonicalVector()
-        parameterizer = GreedyParameterizer()
+        parameterizer = UnifiedAlgorithmParameterizer("greedy")
 
         result = parameterizer.execute(graph, vector)
 
@@ -50,7 +48,7 @@ class TestGreedyParameterizerExecution:
         """execute() should handle empty graph."""
         graph = GraphManager.create_empty_graph()
         vector = CanonicalVector()
-        parameterizer = GreedyParameterizer()
+        parameterizer = UnifiedAlgorithmParameterizer("greedy")
 
         result = parameterizer.execute(graph, vector)
 
@@ -65,7 +63,7 @@ class TestGreedyParameterizerExecution:
         graph.add_edge(1, 2, 1.0)
 
         vector = CanonicalVector()
-        parameterizer = GreedyParameterizer()
+        parameterizer = UnifiedAlgorithmParameterizer("greedy")
 
         result = parameterizer.execute(graph, vector)
 
@@ -82,7 +80,7 @@ class TestGreedyParameterizerExecution:
         vector1 = CanonicalVector()
         vector2 = CanonicalVector(max_iterations=15)
 
-        parameterizer = GreedyParameterizer()
+        parameterizer = UnifiedAlgorithmParameterizer("greedy")
         result1 = parameterizer.execute(graph, vector1)
         result2 = parameterizer.execute(graph, vector2)
 
@@ -94,17 +92,17 @@ class TestItaiParameterizerBasics:
 
     def test_itai_initialization(self):
         """Should initialize without errors."""
-        parameterizer = ItaiParameterizer()
+        parameterizer = UnifiedAlgorithmParameterizer("itai")
         assert parameterizer is not None
 
     def test_itai_name(self):
         """Should return correct algorithm name."""
-        parameterizer = ItaiParameterizer()
+        parameterizer = UnifiedAlgorithmParameterizer("itai")
         assert parameterizer.name() == "Itai-Israeli"
 
     def test_itai_repr(self):
         """Should have string representation."""
-        parameterizer = ItaiParameterizer()
+        parameterizer = UnifiedAlgorithmParameterizer("itai")
         result = repr(parameterizer)
         assert "Itai-Israeli" in result
 
@@ -121,7 +119,7 @@ class TestItaiParameterizerExecution:
         graph.add_edge(2, 3, 1.0)
 
         vector = CanonicalVector()
-        parameterizer = ItaiParameterizer()
+        parameterizer = UnifiedAlgorithmParameterizer("itai")
 
         result = parameterizer.execute(graph, vector)
 
@@ -138,7 +136,7 @@ class TestItaiParameterizerExecution:
         vector_short = CanonicalVector(itai_timeout_rounds=1)
         vector_long = CanonicalVector(itai_timeout_rounds=20)
 
-        parameterizer = ItaiParameterizer()
+        parameterizer = UnifiedAlgorithmParameterizer("itai")
 
         # Both should succeed (timeout affects execution, not validity)
         result_short = parameterizer.execute(graph, vector_short)
@@ -154,7 +152,7 @@ class TestItaiParameterizerExecution:
         graph.add_vertex(2)
         graph.add_edge(1, 2, 1.0)
 
-        parameterizer = ItaiParameterizer()
+        parameterizer = UnifiedAlgorithmParameterizer("itai")
 
         # Test edge cases of timeout range
         for timeout in [1, 10, 20]:
@@ -166,7 +164,7 @@ class TestItaiParameterizerExecution:
         """execute() should handle empty graph."""
         graph = GraphManager.create_empty_graph()
         vector = CanonicalVector()
-        parameterizer = ItaiParameterizer()
+        parameterizer = UnifiedAlgorithmParameterizer("itai")
 
         result = parameterizer.execute(graph, vector)
 
@@ -179,17 +177,17 @@ class TestLubyParameterizerBasics:
 
     def test_luby_initialization(self):
         """Should initialize without errors."""
-        parameterizer = LubyParameterizer()
+        parameterizer = UnifiedAlgorithmParameterizer("luby")
         assert parameterizer is not None
 
     def test_luby_name(self):
         """Should return correct algorithm name."""
-        parameterizer = LubyParameterizer()
+        parameterizer = UnifiedAlgorithmParameterizer("luby")
         assert parameterizer.name() == "Luby Randomized"
 
     def test_luby_repr(self):
         """Should have string representation."""
-        parameterizer = LubyParameterizer()
+        parameterizer = UnifiedAlgorithmParameterizer("luby")
         result = repr(parameterizer)
         assert "Luby Randomized" in result
 
@@ -206,7 +204,7 @@ class TestLubyParameterizerExecution:
         graph.add_edge(2, 3, 1.0)
 
         vector = CanonicalVector()
-        parameterizer = LubyParameterizer()
+        parameterizer = UnifiedAlgorithmParameterizer("luby")
 
         result = parameterizer.execute(graph, vector)
 
@@ -229,7 +227,7 @@ class TestLubyParameterizerExecution:
             luby_coeff_degree=-0.5,
         )
 
-        parameterizer = LubyParameterizer()
+        parameterizer = UnifiedAlgorithmParameterizer("luby")
 
         result1 = parameterizer.execute(graph, vector1)
         result2 = parameterizer.execute(graph, vector2)
@@ -250,7 +248,7 @@ class TestLubyParameterizerExecution:
         vector_few = CanonicalVector(max_iterations=5)
         vector_many = CanonicalVector(max_iterations=20)
 
-        parameterizer = LubyParameterizer()
+        parameterizer = UnifiedAlgorithmParameterizer("luby")
 
         result_few = parameterizer.execute(graph, vector_few)
         result_many = parameterizer.execute(graph, vector_many)
@@ -268,7 +266,7 @@ class TestLubyParameterizerExecution:
         vector_strict = CanonicalVector(convergence_threshold=0.05)
         vector_lenient = CanonicalVector(convergence_threshold=0.0)
 
-        parameterizer = LubyParameterizer()
+        parameterizer = UnifiedAlgorithmParameterizer("luby")
 
         result_strict = parameterizer.execute(graph, vector_strict)
         result_lenient = parameterizer.execute(graph, vector_lenient)
@@ -280,7 +278,7 @@ class TestLubyParameterizerExecution:
         """execute() should handle empty graph."""
         graph = GraphManager.create_empty_graph()
         vector = CanonicalVector()
-        parameterizer = LubyParameterizer()
+        parameterizer = UnifiedAlgorithmParameterizer("luby")
 
         result = parameterizer.execute(graph, vector)
 
@@ -311,7 +309,7 @@ class TestLubyParameterizerExecution:
         is_valid, error = vector.validate()
         assert is_valid, error
 
-        parameterizer = LubyParameterizer()
+        parameterizer = UnifiedAlgorithmParameterizer("luby")
         result = parameterizer.execute(graph, vector)
 
         assert isinstance(result, dict)
@@ -323,9 +321,9 @@ class TestParameterizerConsistency:
     def test_all_parameterizers_implement_interface(self):
         """All parameterizers should have name() and execute()."""
         parameterizers = [
-            GreedyParameterizer(),
-            ItaiParameterizer(),
-            LubyParameterizer(),
+            UnifiedAlgorithmParameterizer("greedy"),
+            UnifiedAlgorithmParameterizer("itai"),
+            UnifiedAlgorithmParameterizer("luby"),
         ]
 
         for p in parameterizers:
@@ -346,9 +344,9 @@ class TestParameterizerConsistency:
         vector = CanonicalVector()
 
         parameterizers = [
-            GreedyParameterizer(),
-            ItaiParameterizer(),
-            LubyParameterizer(),
+            UnifiedAlgorithmParameterizer("greedy"),
+            UnifiedAlgorithmParameterizer("itai"),
+            UnifiedAlgorithmParameterizer("luby"),
         ]
 
         for p in parameterizers:
@@ -366,9 +364,9 @@ class TestParameterizerConsistency:
         invalid_vector = CanonicalVector(max_iterations=100)
 
         parameterizers = [
-            GreedyParameterizer(),
-            ItaiParameterizer(),
-            LubyParameterizer(),
+            UnifiedAlgorithmParameterizer("greedy"),
+            UnifiedAlgorithmParameterizer("itai"),
+            UnifiedAlgorithmParameterizer("luby"),
         ]
 
         # They should either accept it or raise ValueError

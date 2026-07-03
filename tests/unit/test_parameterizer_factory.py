@@ -1,8 +1,6 @@
 """Unit tests for ParameterizerFactory - 3+ comprehensive tests."""
 
-from src.meta.parameterizers.greedy import GreedyParameterizer
-from src.meta.parameterizers.itai import ItaiParameterizer
-from src.meta.parameterizers.luby import LubyParameterizer
+from src.meta.parameterizers.algorithm_parameterizer import UnifiedAlgorithmParameterizer
 from src.meta.parameterizers.factory import ParameterizerFactory
 
 
@@ -18,9 +16,12 @@ class TestParameterizerFactory:
     def test_create_default_has_correct_types(self) -> None:
         """create_default should return [Greedy, Itai, Luby] in order."""
         result = ParameterizerFactory.create_default()
-        assert isinstance(result[0], GreedyParameterizer)
-        assert isinstance(result[1], ItaiParameterizer)
-        assert isinstance(result[2], LubyParameterizer)
+        assert isinstance(result[0], UnifiedAlgorithmParameterizer)
+        assert isinstance(result[1], UnifiedAlgorithmParameterizer)
+        assert isinstance(result[2], UnifiedAlgorithmParameterizer)
+        assert result[0].algorithm_type == "greedy"
+        assert result[1].algorithm_type == "itai"
+        assert result[2].algorithm_type == "luby"
 
     def test_create_default_multiple_calls_independent(self) -> None:
         """Multiple calls to create_default should return independent instances."""
@@ -36,15 +37,18 @@ class TestParameterizerFactory:
         result = ParameterizerFactory.create_luby_only()
         assert isinstance(result, list)
         assert len(result) == 1
-        assert isinstance(result[0], LubyParameterizer)
+        assert isinstance(result[0], UnifiedAlgorithmParameterizer)
+        assert result[0].algorithm_type == "luby"
 
     def test_create_greedy_itai_returns_two(self) -> None:
         """create_greedy_itai should return [Greedy, Itai] in order."""
         result = ParameterizerFactory.create_greedy_itai()
         assert isinstance(result, list)
         assert len(result) == 2
-        assert isinstance(result[0], GreedyParameterizer)
-        assert isinstance(result[1], ItaiParameterizer)
+        assert isinstance(result[0], UnifiedAlgorithmParameterizer)
+        assert isinstance(result[1], UnifiedAlgorithmParameterizer)
+        assert result[0].algorithm_type == "greedy"
+        assert result[1].algorithm_type == "itai"
 
     def test_all_presets_have_execute_method(self) -> None:
         """All created parameterizers should have execute method."""

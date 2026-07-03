@@ -39,16 +39,14 @@ class FitnessEvaluator:
         if not is_valid:
             raise ValueError(f"Invalid vector: {error}")
 
-        # Import parameterizers here to avoid circular imports
-        from src.meta.parameterizers.greedy import GreedyParameterizer
-        from src.meta.parameterizers.itai import ItaiParameterizer
-        from src.meta.parameterizers.luby import LubyParameterizer
+        # Import parameterizer here to avoid circular imports
+        from src.meta.parameterizers.algorithm_parameterizer import UnifiedAlgorithmParameterizer
 
         # Create parameterizers
         parameterizers = [
-            GreedyParameterizer(),
-            ItaiParameterizer(),
-            LubyParameterizer(),
+            UnifiedAlgorithmParameterizer("greedy"),
+            UnifiedAlgorithmParameterizer("itai"),
+            UnifiedAlgorithmParameterizer("luby"),
         ]
 
         # Run all 3 parameterizers to get their matchings
