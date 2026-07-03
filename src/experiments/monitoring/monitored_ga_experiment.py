@@ -9,7 +9,7 @@ from src.graph.graph_manager import GraphManager
 from src.meta.core.canonical_vector import CanonicalVector
 from src.meta.core.fitness_evaluator import FitnessEvaluator
 from src.meta.core.meta_algorithm_ga import MetaAlgorithmGA
-from src.monitoring.ga_progress_monitor import ExperimentProgressTracker
+from src.experiments.monitoring.ga_progress_monitor import ExperimentProgressTracker
 from src.monitoring.monitored_ga_with_hooks import MonitoredMetaAlgorithmGA
 
 

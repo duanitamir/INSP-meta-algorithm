@@ -184,69 +184,11 @@ class DistributedNode:
         return True, "continuing"
 
     def _local_conflict_resolution(self, matchings: List[Dict[int, int]]) -> Dict[int, int]:
-        """Resolve conflicts via endpoint voting protocol (Phase 4).
+        """Resolve conflicts via endpoint voting protocol."""
+        from src.meta.distributed.edge_voting import collect_proposed_edges, apply_quorum_threshold
 
-        For each proposed edge (u, v):
-        1. Node u sends EdgeProposalMessage to node v
-        2. Node v responds with EdgeAcceptanceMessage (vote)
-        3. Edge included in final matching only if both endpoints vote YES
-
-        Args:
-            matchings: List of matching dicts from different algorithms
-
-        Returns:
-            Dict[node_id -> matched_to_id] for edges with quorum acceptance
-        """
-        # Step 1: Collect all unique edges proposed by any algorithm
-        proposed_edges = {}  # edge -> weight
-        for matching in matchings:
-            if self.id in matching:
-                matched_to = matching[self.id]
-
-                # Skip self-matches and invalid edges
-                if matched_to == self.id:
-                    continue
-                if not self.graph._graph.has_edge(self.id, matched_to):
-                    continue
-
-                weight = self.graph.get_edge_weight(self.id, matched_to)
-                edge = (min(self.id, matched_to), max(self.id, matched_to))
-
-                # Keep highest weight for each edge
-                if edge not in proposed_edges or weight > proposed_edges[edge]:
-                    proposed_edges[edge] = weight
-
-        # Step 2: Send proposals to endpoints and collect votes
-        final_matching = {}
-
-        for edge, weight in proposed_edges.items():
-            u, v = edge
-            votes = []
-
-            # This node is an endpoint: vote based on its preference
-            # For now, this node always votes YES for proposed edges
-            # (In real distributed system, node would vote based on constraints)
-            this_node_vote = True
-            votes.append(this_node_vote)
-
-            # Simulate receiving vote from other endpoint
-            # In real system, would send EdgeProposalMessage and wait for EdgeAcceptanceMessage
-            # For simulation, we assume other node votes based on weight (high weight -> yes)
-            other_node_vote = weight > 0  # Accept non-zero weight edges
-            votes.append(other_node_vote)
-
-            # Step 3: Apply quorum threshold
-            # Edge included if >= 50% of endpoints vote YES (for 2 endpoints: both must agree)
-            if len(votes) >= 2:
-                yes_votes = sum(1 for v in votes if v)
-                if yes_votes >= len(votes) * self.voting_quorum:
-                    # Add to final matching (edge normalized to (this_node, other_node))
-                    if u == self.id:
-                        final_matching[self.id] = v
-                    else:
-                        final_matching[self.id] = u
-
-        return final_matching
+        proposed_edges = collect_proposed_edges(self.id, matchings, self.graph)
+        return apply_quorum_threshold(proposed_edges, self.id, self.voting_quorum)
 
     def _create_context(self):
         """Create algorithm context for this node."""

@@ -7,7 +7,7 @@ from typing import Optional, Dict, Callable
 import threading
 from functools import wraps
 
-from src.monitoring.ga_progress_monitor import ExperimentProgressTracker
+from src.experiments.monitoring.ga_progress_monitor import ExperimentProgressTracker
 
 
 # Thread-local storage for tracking which thread is doing what

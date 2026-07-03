@@ -4,7 +4,7 @@ from typing import Optional, List
 from src.meta.core.meta_algorithm_ga import MetaAlgorithmGA
 from src.meta.core.canonical_vector import CanonicalVector
 from src.graph.graph_manager import GraphManager
-from src.monitoring.ga_progress_monitor import ExperimentProgressTracker
+from src.experiments.monitoring.ga_progress_monitor import ExperimentProgressTracker
 
 
 class MonitoredMetaAlgorithmGA(MetaAlgorithmGA):

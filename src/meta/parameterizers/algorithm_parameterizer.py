@@ -44,65 +44,32 @@ class UnifiedAlgorithmParameterizer(BaseParameterizer):
         self._max_neighbors = 1
 
     def _extract_parameters(self, canonical_vector: CanonicalVector) -> Dict[str, Any]:
-        """Extract algorithm-specific parameters from canonical vector.
+        """Extract algorithm-specific parameters from canonical vector."""
+        extractors = {
+            "greedy": lambda v: {"max_rounds": int(v.max_iterations)},
+            "itai": lambda v: {"timeout_rounds": v.itai_timeout_rounds, "max_rounds": int(v.max_iterations)},
+            "luby": lambda v: {
+                "base_probability": v.luby_base_probability,
+                "coeff_degree": v.luby_coeff_degree,
+                "coeff_neighbors_unmatched": v.luby_coeff_neighbors_unmatched,
+                "coeff_clustering": v.luby_coeff_clustering,
+                "coeff_matched": v.luby_coeff_matched,
+                "coeff_round": v.luby_coeff_round,
+                "coeff_weight": v.luby_coeff_weight,
+                "max_rounds": int(v.max_iterations),
+            }
+        }
+        return extractors[self.algorithm_type](canonical_vector)
 
-        Args:
-            canonical_vector: 10-parameter chromosome
-
-        Returns:
-            Dict with algorithm-specific parameters
-        """
+    def _create_vector_from_params(self, parameters: Dict[str, Any], max_rounds: int) -> CanonicalVector:
+        """Create CanonicalVector from algorithm-specific parameters."""
         if self.algorithm_type == "greedy":
-            return {
-                "max_rounds": int(canonical_vector.max_iterations),
-            }
-
+            return CanonicalVector()
         elif self.algorithm_type == "itai":
-            return {
-                "timeout_rounds": canonical_vector.itai_timeout_rounds,
-                "max_rounds": int(canonical_vector.max_iterations),
-            }
-
+            return CanonicalVector(itai_timeout_rounds=parameters.get("timeout_rounds", 5))
         elif self.algorithm_type == "luby":
-            return {
-                "base_probability": canonical_vector.luby_base_probability,
-                "coeff_degree": canonical_vector.luby_coeff_degree,
-                "coeff_neighbors_unmatched": canonical_vector.luby_coeff_neighbors_unmatched,
-                "coeff_clustering": canonical_vector.luby_coeff_clustering,
-                "coeff_matched": canonical_vector.luby_coeff_matched,
-                "coeff_round": canonical_vector.luby_coeff_round,
-                "coeff_weight": canonical_vector.luby_coeff_weight,
-                "max_rounds": int(canonical_vector.max_iterations),
-            }
-
-    def _run_algorithm(self, graph: Any, parameters: Dict[str, Any]) -> Dict[int, int]:
-        """Run algorithm through multiple rounds until convergence.
-
-        Args:
-            graph: GraphManager instance
-            parameters: Algorithm-specific parameters
-
-        Returns:
-            Matching dict {node_id -> matched_partner}
-        """
-        from src.state.store import StateStore
-        from src.communication.message_queue import MessageQueue
-
-        state_store = StateStore(graph)
-        message_queue = MessageQueue(graph)
-        max_rounds = min(parameters.get("max_rounds", 100), 50)
-
-        # Create temporary vector with parameters for this algorithm
-        if self.algorithm_type == "greedy":
-            self._temp_vector = CanonicalVector()
-        elif self.algorithm_type == "itai":
-            self._temp_vector = CanonicalVector(
-                itai_timeout_rounds=parameters.get("timeout_rounds", 5)
-            )
-        elif self.algorithm_type == "luby":
-            base_prob = parameters.get("base_probability", 0.5)
-            self._temp_vector = CanonicalVector(
-                luby_base_probability=base_prob,
+            return CanonicalVector(
+                luby_base_probability=parameters.get("base_probability", 0.5),
                 luby_coeff_degree=parameters.get("coeff_degree", 0.0),
                 luby_coeff_neighbors_unmatched=parameters.get("coeff_neighbors_unmatched", 0.0),
                 luby_coeff_clustering=parameters.get("coeff_clustering", 0.0),
@@ -111,6 +78,16 @@ class UnifiedAlgorithmParameterizer(BaseParameterizer):
                 luby_coeff_weight=parameters.get("coeff_weight", 0.0),
                 max_iterations=max_rounds,
             )
+
+    def _run_algorithm(self, graph: Any, parameters: Dict[str, Any]) -> Dict[int, int]:
+        """Run algorithm through multiple rounds until convergence."""
+        from src.state.store import StateStore
+        from src.communication.message_queue import MessageQueue
+
+        state_store = StateStore(graph)
+        message_queue = MessageQueue(graph)
+        max_rounds = min(parameters.get("max_rounds", 100), 50)
+        self._temp_vector = self._create_vector_from_params(parameters, max_rounds)
 
         # Loop through rounds until convergence or max_rounds
         for round_num in range(max_rounds):
