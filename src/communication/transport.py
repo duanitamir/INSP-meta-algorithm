@@ -1,16 +1,15 @@
-"""In-memory transport implementation.
+"""In-memory transport implementation for message passing.
 
-Default transport for testing. Uses MessageQueue internally.
-Can be swapped for TCP, gRPC, or other transports without changing node code.
+Provides the InMemoryTransport class for testing and single-machine simulation.
+All messages stay in RAM with no network overhead.
 """
 
 from typing import List, Dict, Any
 from collections import defaultdict
-from src.communication.transport_interface import TransportInterface
-from src.communication.message import Message
+from src.communication.message import Message, SemanticMessage
 
 
-class InMemoryTransport(TransportInterface):
+class InMemoryTransport:
     """In-memory message transport using dictionary-based queues.
 
     Suitable for testing and single-machine simulation.
@@ -37,7 +36,6 @@ class InMemoryTransport(TransportInterface):
         """
         # Create new message with correct sender/recipient (messages are immutable)
         if hasattr(message, 'message_type'):
-            from src.communication.semantic_message import SemanticMessage
             msg = SemanticMessage(
                 sender=sender_id,
                 recipient=recipient_id,
@@ -61,7 +59,6 @@ class InMemoryTransport(TransportInterface):
         for message in messages:
             # Create new message with correct sender (messages are immutable)
             if hasattr(message, 'message_type'):
-                from src.communication.semantic_message import SemanticMessage
                 msg = SemanticMessage(
                     sender=sender_id,
                     recipient=message.recipient,
