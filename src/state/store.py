@@ -2,7 +2,7 @@ from typing import Dict, List, Any
 from dataclasses import dataclass
 from threading import RLock
 from src.graph.graph_manager import GraphManager
-from src.state.node_state import NodeState
+from src.state.node import NodeState
 from src.utils.types import RoundNumber
 
 

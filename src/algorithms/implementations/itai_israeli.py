@@ -35,7 +35,7 @@ Message Types:
 
 from typing import List, Tuple
 from src.algorithms.base import MatchingAlgorithm, AlgorithmMetadata
-from src.state.state_store import StateStore
+from src.state.store import StateStore
 from src.communication.message import Message
 from src.utils.types import RoundNumber
 

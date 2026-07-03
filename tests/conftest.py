@@ -1,6 +1,6 @@
 import pytest
 from src.simulation import SimulationConfig
-from src.state.state_store import StateStore
+from src.state.store import StateStore
 
 # Import all graph fixtures
 from tests.fixtures.conftest_graphs import (

@@ -1,6 +1,6 @@
 from typing import Dict, Set
 from src.graph.graph_manager import GraphManager
-from src.state.state_store import StateStore
+from src.state.store import StateStore
 
 
 class GraphVisualizer:

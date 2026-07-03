@@ -29,26 +29,36 @@ class MetaAlgorithmGA:
 
     def __init__(
         self,
-        fitness_evaluator: FitnessEvaluator,
+        fitness_evaluator: FitnessEvaluator | None = None,
         population_size: int = 20,
         generations: int = 10,
         mutation_rate: float = 0.1,
         elite_fraction: float = 0.5,
         early_stop_generations: int = 10,
         num_workers: int = 4,
+        use_cascading: bool = True,
     ) -> None:
         """Initialize genetic algorithm.
 
         Args:
-            fitness_evaluator: FitnessEvaluator instance
+            fitness_evaluator: FitnessEvaluator instance (if None, uses cascading by default)
             population_size: Number of vectors in population
             generations: Number of generations to evolve
             mutation_rate: Base mutation probability per parameter [0, 1]
             elite_fraction: Fraction of population to keep as elite [0.1, 0.9]
             early_stop_generations: Stop if no improvement for N generations (default 10)
             num_workers: Number of parallel workers for evaluation
+            use_cascading: If True, use DistributedCascadingEvaluator; if False, use standard FitnessEvaluator
         """
-        self.fitness_evaluator = fitness_evaluator
+        if fitness_evaluator is None:
+            # Use cascading by default for GA optimization
+            if use_cascading:
+                from src.meta.core.distributed_cascading_evaluator import DistributedCascadingEvaluator
+                self.fitness_evaluator = DistributedCascadingEvaluator()
+            else:
+                self.fitness_evaluator = FitnessEvaluator()
+        else:
+            self.fitness_evaluator = fitness_evaluator
         self.population_size = population_size
         self.generations = generations
         self.base_mutation_rate = mutation_rate
@@ -67,8 +77,21 @@ class MetaAlgorithmGA:
             - CanonicalVector: Best vector found
             - List[float]: Best fitness per generation
         """
-        # Initialize population with random valid vectors
-        population = [CanonicalVector() for _ in range(self.population_size)]
+        # Initialize population with baseline vector + random vectors
+        # Baseline uses standard algorithm defaults (no adaptive coefficients)
+        baseline_vector = CanonicalVector(
+            luby_base_probability=0.5,
+            luby_coeff_degree=0.0,
+            luby_coeff_neighbors_unmatched=0.0,
+            luby_coeff_clustering=0.0,
+            luby_coeff_matched=0.0,
+            luby_coeff_round=0.0,
+            luby_coeff_weight=0.0,
+            itai_timeout_rounds=5,
+            max_iterations=10,
+            convergence_threshold=0.05,
+        )
+        population = [baseline_vector] + [CanonicalVector() for _ in range(self.population_size - 1)]
 
         best_vector = population[0]
         best_fitness = 0.0

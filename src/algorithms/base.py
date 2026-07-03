@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Dict, List, Tuple, Any
 from dataclasses import dataclass
-from src.state.state_store import StateStore
+from src.state.store import StateStore
 from src.communication.message import Message
 from src.utils.types import RoundNumber
 

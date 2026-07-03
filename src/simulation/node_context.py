@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Any, Optional
 from src.graph.graph_manager import GraphManager
 from src.meta.core.canonical_vector import CanonicalVector
-from src.state.state_store import StateStore
+from src.state.store import StateStore
 
 
 @dataclass

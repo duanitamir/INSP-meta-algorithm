@@ -8,7 +8,7 @@ from typing import Any, Callable, Dict, Tuple, List
 
 from src.meta.parameterizers.base import AlgorithmParameterizer
 from src.meta.core.canonical_vector import CanonicalVector
-from src.state.node_state import NodeState
+from src.state.node import NodeState
 from src.simulation.node_context import NodeContext
 
 
@@ -56,7 +56,7 @@ class LubyParameterizer(AlgorithmParameterizer):
             Matching dict {node_id -> matched_partner}
         """
         # Import here to avoid circular imports
-        from src.state.state_store import StateStore
+        from src.state.store import StateStore
         from src.communication.message_queue import MessageQueue
         from src.simulation.node_context import NodeContext
 

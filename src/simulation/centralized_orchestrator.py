@@ -13,7 +13,7 @@ The orchestrator:
 from typing import Any, Dict
 from src.graph.graph_manager import GraphManager
 from src.meta.core.canonical_vector import CanonicalVector
-from src.state.state_store import StateStore
+from src.state.store import StateStore
 from src.communication.message_queue import MessageQueue
 from src.simulation.algorithm_context import AlgorithmContext
 from src.algorithms.implementations.greedy_matching import GreedyMatching

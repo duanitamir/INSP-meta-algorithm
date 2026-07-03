@@ -76,7 +76,8 @@ class FitnessEvaluator:
     def _merge_matchings(self, matchings: list, graph: GraphManager) -> dict:
         """Merge multiple matchings via conflict resolution.
 
-        Keeps highest-weight non-conflicting edges from all matchings.
+        Prioritizes edges agreed upon by multiple algorithms, breaks ties by weight.
+        Ensures symmetric matching. Uses same merge logic as CentralizedOrchestrator.
 
         Args:
             matchings: List of matching dicts
@@ -85,27 +86,34 @@ class FitnessEvaluator:
         Returns:
             Merged matching dict
         """
-        edge_proposals = {}
+        if not matchings:
+            return {}
 
-        # Collect all proposed edges with their weights
+        edge_proposals = {}
         for matching in matchings:
             for u, v in matching.items():
-                if u < v:  # Normalize edge
-                    weight = graph.get_edge_weight(u, v)
-                    if (u, v) not in edge_proposals:
-                        edge_proposals[(u, v)] = weight
-                    else:
-                        # Keep highest weight
-                        edge_proposals[(u, v)] = max(edge_proposals[(u, v)], weight)
+                if u is None or v is None:
+                    continue
+                edge = tuple(sorted([u, v]))
+                if edge not in edge_proposals:
+                    edge_proposals[edge] = {"weights": [], "count": 0}
+                weight = graph.get_edge_weight(u, v)
+                edge_proposals[edge]["weights"].append(weight)
+                edge_proposals[edge]["count"] += 1
 
-        # Sort by weight descending
-        sorted_edges = sorted(edge_proposals.items(), key=lambda x: x[1], reverse=True)
-
-        # Greedily select non-conflicting edges
+        # Sort by: (proposal_count DESC, max_weight DESC)
+        # Prefer edges found by multiple algorithms, break ties by weight
         final_matching = {}
         used_nodes = set()
-
-        for (u, v), weight in sorted_edges:
+        for edge in sorted(
+            edge_proposals.keys(),
+            key=lambda e: (
+                edge_proposals[e]["count"],  # Algorithms agreeing (desc)
+                max(edge_proposals[e]["weights"])  # Highest weight (desc)
+            ),
+            reverse=True,
+        ):
+            u, v = edge
             if u not in used_nodes and v not in used_nodes:
                 final_matching[u] = v
                 final_matching[v] = u

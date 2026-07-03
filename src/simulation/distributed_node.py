@@ -1,7 +1,7 @@
 """Fully distributed node for autonomous algorithm execution and coordination."""
 
 from typing import Dict, List, Tuple, Any
-from src.state.node_state import NodeState
+from src.state.node import NodeState
 from src.communication.message import Message
 from src.communication.message_queue import MessageQueue
 from src.communication.node_communicator import NodeCommunicator
@@ -251,7 +251,7 @@ class DistributedNode:
     def _create_context(self):
         """Create algorithm context for this node."""
         from src.simulation.algorithm_context import AlgorithmContext
-        from src.state.node_state_store_adapter import NodeStateStoreAdapter
+        from src.state import StateStore as NodeStateStoreAdapter
 
         # Create adapter so algorithms can work unchanged
         state_store_adapter = NodeStateStoreAdapter(self.state, self.id)

@@ -13,7 +13,7 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Dict, Tuple, List
 
 from src.meta.core.canonical_vector import CanonicalVector
-from src.state.node_state import NodeState
+from src.state.node import NodeState
 
 if TYPE_CHECKING:
     from src.simulation.node_context import NodeContext

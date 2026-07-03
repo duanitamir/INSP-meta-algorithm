@@ -10,12 +10,14 @@ Contains:
 from .canonical_vector import CanonicalVector
 from .ga_config import GAConfig
 from .fitness_evaluator import FitnessEvaluator
+from .distributed_cascading_evaluator import DistributedCascadingEvaluator
 from .meta_algorithm_ga import MetaAlgorithmGA, PopulationEvaluation
 
 __all__ = [
     "CanonicalVector",
     "GAConfig",
     "FitnessEvaluator",
+    "DistributedCascadingEvaluator",
     "MetaAlgorithmGA",
     "PopulationEvaluation",
 ]
