@@ -25,173 +25,48 @@ class NodeCommunicator:
     """
 
     def __init__(self, node_id: int, outbox: MessageQueue, inbox: MessageQueue):
-        """Initialize communicator for a node.
-
-        Args:
-            node_id: This node's ID
-            outbox: MessageQueue for outgoing messages
-            inbox: MessageQueue for incoming messages
-        """
+        """Initialize communicator for a node."""
         self.node_id = node_id
         self.outbox = outbox
         self.inbox = inbox
 
-    def communicate_bid(
-        self, recipient_id: int, edge_u: int, edge_v: float, weight: float
-    ) -> None:
-        """Send a bid proposal to another node.
-
-        Semantics: "I propose edge (u,v) with weight w. Do you accept?"
-
-        Args:
-            recipient_id: Target node ID
-            edge_u: First endpoint of edge
-            edge_v: Second endpoint of edge
-            weight: Edge weight
-        """
-        msg = SemanticMessage(
-            sender=self.node_id,
-            recipient=recipient_id,
-            message_type="bid",
-            payload={
-                "edge": (edge_u, edge_v),
-                "weight": weight,
-            },
-        )
+    def _send_message(self, recipient_id: int, message_type: str, payload: Dict[str, Any]) -> None:
+        """Send a message to a single recipient."""
+        msg = SemanticMessage(sender=self.node_id, recipient=recipient_id, message_type=message_type, payload=payload)
         self.outbox.send(msg)
 
-    def communicate_accept(
-        self, recipient_id: int, edge_u: int, edge_v: int, weight: float
-    ) -> None:
-        """Send acceptance vote for an edge.
-
-        Semantics: "I vote YES for edge (u,v) with weight w"
-
-        Args:
-            recipient_id: Target node ID
-            edge_u: First endpoint of edge
-            edge_v: Second endpoint of edge
-            weight: Edge weight
-        """
-        msg = SemanticMessage(
-            sender=self.node_id,
-            recipient=recipient_id,
-            message_type="accept",
-            payload={
-                "edge": (edge_u, edge_v),
-                "weight": weight,
-                "vote": "yes",
-            },
-        )
-        self.outbox.send(msg)
-
-    def communicate_reject(
-        self, recipient_id: int, edge_u: int, edge_v: int
-    ) -> None:
-        """Send rejection vote for an edge.
-
-        Semantics: "I vote NO for edge (u,v)"
-
-        Args:
-            recipient_id: Target node ID
-            edge_u: First endpoint of edge
-            edge_v: Second endpoint of edge
-        """
-        msg = SemanticMessage(
-            sender=self.node_id,
-            recipient=recipient_id,
-            message_type="reject",
-            payload={
-                "edge": (edge_u, edge_v),
-                "vote": "no",
-            },
-        )
-        self.outbox.send(msg)
-
-    def communicate_match(
-        self, recipient_id: int, partner_id: int, weight: float
-    ) -> None:
-        """Announce a confirmed match with another node.
-
-        Semantics: "I am matched to node partner_id with edge weight w"
-
-        Args:
-            recipient_id: Target node ID
-            partner_id: Node ID of matched partner
-            weight: Edge weight
-        """
-        msg = SemanticMessage(
-            sender=self.node_id,
-            recipient=recipient_id,
-            message_type="match",
-            payload={
-                "partner": partner_id,
-                "weight": weight,
-            },
-        )
-        self.outbox.send(msg)
-
-    def communicate_convergence_vote(
-        self, recipient_ids: List[int], vote: str, round_num: int
-    ) -> None:
-        """Broadcast convergence vote to neighbors.
-
-        Semantics: "My convergence status is 'continue' or 'stop' at round N"
-
-        Args:
-            recipient_ids: List of node IDs to send to
-            vote: "continue" or "stop"
-            round_num: Current round number
-        """
+    def _broadcast_message(self, recipient_ids: List[int], message_type: str, payload: Dict[str, Any]) -> None:
+        """Send a message to multiple recipients."""
         for recipient_id in recipient_ids:
-            msg = SemanticMessage(
-                sender=self.node_id,
-                recipient=recipient_id,
-                message_type="convergence_vote",
-                payload={
-                    "vote": vote,
-                    "round": round_num,
-                },
-            )
-            self.outbox.send(msg)
+            self._send_message(recipient_id, message_type, payload)
 
-    def communicate_state_update(
-        self, recipient_id: int, state_dict: Dict[str, Any]
-    ) -> None:
-        """Send local state information to another node.
+    def communicate_bid(self, recipient_id: int, edge_u: int, edge_v: float, weight: float) -> None:
+        """Send a bid proposal to another node."""
+        self._send_message(recipient_id, "bid", {"edge": (edge_u, edge_v), "weight": weight})
 
-        Semantics: "Here is my current state: ..."
+    def communicate_accept(self, recipient_id: int, edge_u: int, edge_v: int, weight: float) -> None:
+        """Send acceptance vote for an edge."""
+        self._send_message(recipient_id, "accept", {"edge": (edge_u, edge_v), "weight": weight, "vote": "yes"})
 
-        Args:
-            recipient_id: Target node ID
-            state_dict: Dictionary of state information
-        """
-        msg = SemanticMessage(
-            sender=self.node_id,
-            recipient=recipient_id,
-            message_type="state_update",
-            payload=state_dict,
-        )
-        self.outbox.send(msg)
+    def communicate_reject(self, recipient_id: int, edge_u: int, edge_v: int) -> None:
+        """Send rejection vote for an edge."""
+        self._send_message(recipient_id, "reject", {"edge": (edge_u, edge_v), "vote": "no"})
 
-    def communicate_gossip_parameter(
-        self, recipient_id: int, parameter_dict: Dict[str, Any]
-    ) -> None:
-        """Send parameter information via gossip.
+    def communicate_match(self, recipient_id: int, partner_id: int, weight: float) -> None:
+        """Announce a confirmed match with another node."""
+        self._send_message(recipient_id, "match", {"partner": partner_id, "weight": weight})
 
-        Semantics: "I discovered good parameters, consider these..."
+    def communicate_convergence_vote(self, recipient_ids: List[int], vote: str, round_num: int) -> None:
+        """Broadcast convergence vote to neighbors."""
+        self._broadcast_message(recipient_ids, "convergence_vote", {"vote": vote, "round": round_num})
 
-        Args:
-            recipient_id: Target node ID
-            parameter_dict: Parameter information
-        """
-        msg = SemanticMessage(
-            sender=self.node_id,
-            recipient=recipient_id,
-            message_type="gossip_parameter",
-            payload=parameter_dict,
-        )
-        self.outbox.send(msg)
+    def communicate_state_update(self, recipient_id: int, state_dict: Dict[str, Any]) -> None:
+        """Send local state information to another node."""
+        self._send_message(recipient_id, "state_update", state_dict)
+
+    def communicate_gossip_parameter(self, recipient_id: int, parameter_dict: Dict[str, Any]) -> None:
+        """Send parameter information via gossip."""
+        self._send_message(recipient_id, "gossip_parameter", parameter_dict)
 
     def receive_messages(self) -> List[SemanticMessage]:
         """Receive all pending messages for this node.

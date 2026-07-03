@@ -242,53 +242,6 @@ class LubyRandomizedMatching(MatchingAlgorithm):
     def check_termination(
         self, state_store: StateStore, round_num: RoundNumber, messages_sent: int
     ) -> Tuple[bool, str | None]:
-        """Check if algorithm has converged (uses common termination logic)."""
+        """Check if algorithm has converged."""
         max_rounds = self.metadata.properties.get("max_rounds", 200) if self.metadata.properties else 200
         return self.check_default_termination(state_store, round_num, messages_sent, max_rounds)
-
-    def extract_matching(self, state_store: StateStore, graph) -> dict:
-        """Extract final matching from state store."""
-        matching = {}
-        all_states = state_store.get_all_states()
-
-        for node_id, state in all_states.items():
-            matched_to = state.get_matched_to()
-            if matched_to is not None:
-                matching[node_id] = matched_to
-
-        return matching
-
-    def validate_matching(self, matching: dict, graph) -> Tuple[bool, str | None]:
-        """Validate that matching is symmetric and valid."""
-        # Check symmetry
-        for u, v in matching.items():
-            if v not in matching or matching[v] != u:
-                return False, f"Asymmetric: {u}->{v} but {v}->? (not {u})"
-
-            # Check edge exists
-            if not graph.has_edge(u, v):
-                return False, f"Edge {u}-{v} doesn't exist in graph"
-
-        # Check no node matched twice
-        matched_nodes = set()
-        for u, v in matching.items():
-            if u in matched_nodes:
-                return False, f"Node {u} matched multiple times"
-            matched_nodes.add(u)
-
-        return True, None
-
-    def is_maximal_matching(self, matching: dict, graph) -> bool:
-        """Check if matching is maximal (can't add more edges)."""
-        matched_nodes = set(matching.keys())
-
-        # For each unmatched node, check if there's an unmatched neighbor
-        for u in graph.vertices():
-            if u not in matched_nodes:
-                # u is unmatched, check all neighbors
-                for v in graph.neighbors(u):
-                    if v not in matched_nodes:
-                        # Both u and v unmatched, edge (u,v) could be added
-                        return False
-
-        return True
