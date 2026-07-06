@@ -33,7 +33,7 @@ Message Types:
 - CONFIRM: proposer confirms match established
 """
 
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 from src.algorithms.base import MatchingAlgorithm, AlgorithmMetadata
 from src.state.store import StateStore
 from src.communication.message import Message
@@ -186,6 +186,38 @@ class ItaiIsraeliMaximalMatching(MatchingAlgorithm):
             payload={"type": "ACCEPT"},
             round_num=context.round_num,
         )]
+
+    def propose_to_neighbors(self, node_id: int, neighbors: List[int], context) -> Dict[int, float]:
+        """
+        Itai-Israeli algorithm proposal: which neighbors to propose to?
+
+        Returns proposals only to neighbors (local scope), not entire graph.
+
+        Args:
+            node_id: This node's ID
+            neighbors: List of direct neighbors only
+            context: Algorithm context with graph
+
+        Returns:
+            Dict[neighbor_id, weight] - proposals to send (can be empty or single)
+        """
+        if not neighbors or len(neighbors) == 0:
+            return {}
+
+        best_neighbor = None
+        best_weight = -1
+
+        for neighbor in neighbors:
+            weight = context.graph.get_edge_weight(node_id, neighbor)
+            if weight > best_weight:
+                best_weight = weight
+                best_neighbor = neighbor
+
+        if best_neighbor is None:
+            return {}
+
+        # Itai-Israeli: propose to best neighbor only
+        return {best_neighbor: best_weight}
 
     def stage_generate_propose(self, neighbors, node_id, context):
         """Generate PROPOSE to best (highest weight) neighbor."""

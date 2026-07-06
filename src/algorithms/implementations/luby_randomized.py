@@ -13,7 +13,7 @@ on complex graphs due to timing in the synchronous model. This is expected behav
 for this simplified randomized algorithm.
 """
 
-from typing import List, Tuple, Callable
+from typing import List, Tuple, Callable, Dict
 import random
 from src.algorithms.base import MatchingAlgorithm, AlgorithmMetadata
 from src.state.store import StateStore
@@ -69,6 +69,49 @@ class LubyRandomizedMatching(MatchingAlgorithm):
             state.set("proposal_weight", None)
             state.set("has_neighbors", graph.degree(node_id) > 0)
             state_store.update_node_state(node_id, state)
+
+    def propose_to_neighbors(self, node_id: int, neighbors: List[int], context) -> Dict[int, float]:
+        """
+        Luby-style algorithm proposal: which neighbors to propose to?
+
+        Returns proposals only to neighbors (local scope), not entire graph.
+
+        Args:
+            node_id: This node's ID
+            neighbors: List of direct neighbors only
+            context: Algorithm context with graph
+
+        Returns:
+            Dict[neighbor_id, weight] - proposals to send (can be empty or single)
+        """
+        if not neighbors or len(neighbors) == 0:
+            return {}
+
+        # Luby-style: probabilistically decide whether to activate
+        if self.activation_function is not None:
+            activation_prob = self.activation_function(node_id)
+        else:
+            activation_prob = self.activation_probability
+
+        if random.random() >= activation_prob:
+            # Not activating this round
+            return {}
+
+        # Find best neighbor
+        best_neighbor = None
+        best_weight = -1
+
+        for neighbor in neighbors:
+            weight = context.graph.get_edge_weight(node_id, neighbor)
+            if weight > best_weight:
+                best_weight = weight
+                best_neighbor = neighbor
+
+        if best_neighbor is None:
+            return {}
+
+        # Luby-style: propose to best neighbor only (with randomization)
+        return {best_neighbor: best_weight}
 
     def node_behavior(
         self, node_id: int, node_state, messages: List[Message], context

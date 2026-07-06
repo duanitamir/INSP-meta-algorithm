@@ -16,6 +16,7 @@ from src.graph.graph_manager import GraphManager
 from src.meta.core.canonical_vector import CanonicalVector
 from src.simulation.distributed_node import DistributedNode
 from src.simulation.parallel_node_executor import ParallelNodeExecutor
+from src.meta.distributed.convergence_detector import DistributedConvergenceDetector
 
 
 class DistributedOrchestrator:
@@ -64,10 +65,21 @@ class DistributedOrchestrator:
         if not is_valid:
             raise ValueError(f"Invalid canonical vector: {error}")
 
+        # Initialize convergence detector for distributed voting
+        convergence_detector = DistributedConvergenceDetector(
+            convergence_threshold=0.05,
+            quorum_threshold=0.5,
+            gossip_frequency=1,
+            max_iterations=int(canonical_vector.max_iterations),
+        )
+        convergence_detector.initialize(graph.vertices())
+
         # Create one autonomous node per graph vertex
         nodes: Dict[int, DistributedNode] = {}
         for node_id in graph.vertices():
-            nodes[node_id] = DistributedNode(node_id, graph)
+            node = DistributedNode(node_id, graph)
+            node.convergence_detector = convergence_detector
+            nodes[node_id] = node
 
         max_iterations = int(canonical_vector.max_iterations)
         iteration = 0

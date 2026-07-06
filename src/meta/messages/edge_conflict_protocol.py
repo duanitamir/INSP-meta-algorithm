@@ -63,3 +63,43 @@ class EdgeAcceptanceMessage(Message):
         if isinstance(self.payload, dict) and "reason" in self.payload:
             return str(self.payload["reason"])
         return "No reason provided"
+
+
+@dataclass(frozen=True)
+class MatchConfirmationMessage(Message):
+    """Both endpoints confirm they're matched to each other."""
+
+    @property
+    def edge(self) -> Tuple[int, int]:
+        """Get the confirmed edge."""
+        if isinstance(self.payload, dict) and "edge" in self.payload:
+            edge = self.payload["edge"]
+            return tuple(edge) if isinstance(edge, (list, tuple)) else edge
+        return (self.sender, self.recipient)
+
+    @property
+    def status(self) -> str:
+        """Get status: CONFIRMED or CANCELLED."""
+        if isinstance(self.payload, dict) and "status" in self.payload:
+            return str(self.payload["status"])
+        return "CONFIRMED"
+
+
+@dataclass(frozen=True)
+class MatchCancellationMessage(Message):
+    """Node was previously accepted but found better match."""
+
+    @property
+    def edge(self) -> Tuple[int, int]:
+        """Get the cancelled edge."""
+        if isinstance(self.payload, dict) and "edge" in self.payload:
+            edge = self.payload["edge"]
+            return tuple(edge) if isinstance(edge, (list, tuple)) else edge
+        return (self.sender, self.recipient)
+
+    @property
+    def new_partner(self) -> int:
+        """Get the node we're switching to."""
+        if isinstance(self.payload, dict) and "new_partner" in self.payload:
+            return int(self.payload["new_partner"])
+        return -1

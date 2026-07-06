@@ -79,12 +79,24 @@ class UnifiedAlgorithmParameterizer(BaseParameterizer):
                 max_iterations=max_rounds,
             )
 
-    def _run_algorithm(self, graph: Any, parameters: Dict[str, Any]) -> Dict[int, int]:
-        """Run algorithm through multiple rounds until convergence."""
+    def _run_algorithm(self, graph: Any, parameters: Dict[str, Any], state_store: Any = None) -> Dict[int, int]:
+        """Run algorithm through multiple rounds until convergence.
+
+        Args:
+            graph: GraphManager instance
+            parameters: Algorithm parameters dict
+            state_store: Optional existing StateStore to reuse (for cascading). If None, creates fresh.
+
+        Returns:
+            Dict[int, int] of matching. StateStore state updated in-place if provided.
+        """
         from src.state.store import StateStore
         from src.communication.message_queue import MessageQueue
 
-        state_store = StateStore(graph)
+        # Use provided state_store (for cascading) or create fresh one
+        if state_store is None:
+            state_store = StateStore(graph)
+
         message_queue = MessageQueue(graph)
         max_rounds = min(parameters.get("max_rounds", 100), 50)
         self._temp_vector = self._create_vector_from_params(parameters, max_rounds)
@@ -287,3 +299,37 @@ class UnifiedAlgorithmParameterizer(BaseParameterizer):
             )
 
         return new_state, outgoing_messages
+
+    def propose_to_neighbors(self, node_id: int, neighbors: List[int], context: Any) -> Dict[int, float]:
+        """Get proposals to neighbors (local scope only).
+
+        Args:
+            node_id: This node's ID
+            neighbors: List of direct neighbors only
+            context: Algorithm context
+
+        Returns:
+            Dict[neighbor_id, weight] - proposals to send
+        """
+        from src.algorithms.implementations.greedy_matching import GreedyMatching
+        from src.algorithms.implementations.itai_israeli import ItaiIsraeliMaximalMatching
+        from src.algorithms.implementations.luby_randomized import LubyRandomizedMatching
+
+        if self.algorithm_type == "greedy":
+            greedy = GreedyMatching()
+            return greedy.propose_to_neighbors(node_id, neighbors, context)
+
+        elif self.algorithm_type == "itai":
+            timeout_rounds = getattr(context, "vector", None)
+            if timeout_rounds:
+                timeout_rounds = timeout_rounds.itai_timeout_rounds
+            else:
+                timeout_rounds = 5
+            itai = ItaiIsraeliMaximalMatching(timeout_rounds=timeout_rounds)
+            return itai.propose_to_neighbors(node_id, neighbors, context)
+
+        elif self.algorithm_type == "luby":
+            luby = LubyRandomizedMatching(activation_probability=0.5)
+            return luby.propose_to_neighbors(node_id, neighbors, context)
+
+        return {}

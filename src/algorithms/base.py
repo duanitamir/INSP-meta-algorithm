@@ -97,6 +97,21 @@ class MatchingAlgorithm(ABC):
         """Get algorithm metadata."""
         ...
 
+    @abstractmethod
+    def propose_to_neighbors(self, node_id: int, neighbors: List[int], context) -> Dict[int, float]:
+        """
+        Get proposals to neighbors (local scope only).
+
+        Args:
+            node_id: This node's ID
+            neighbors: List of direct neighbors only
+            context: Execution context (graph, round info)
+
+        Returns:
+            Dict[neighbor_id, weight] - proposals to send
+        """
+        ...
+
     def extract_matching(
         self,
         state_store: StateStore,

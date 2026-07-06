@@ -13,7 +13,7 @@ class ConcreteParameterizer(AlgorithmParameterizer):
         """Extract test parameters."""
         return {"test": True}
 
-    def _run_algorithm(self, graph, parameters):
+    def _run_algorithm(self, graph, parameters, state_store=None):
         """Return empty matching."""
         return {}
 

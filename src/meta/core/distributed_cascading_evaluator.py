@@ -31,7 +31,7 @@ class DistributedCascadingEvaluator:
         self.last_weights_per_cascade = []
 
     def evaluate(self, graph: GraphManager, vector: CanonicalVector) -> float:
-        """Evaluate fitness using cascading rounds.
+        """Evaluate fitness using cascading rounds with persistent state.
 
         Compatible with FitnessEvaluator interface - returns just the fitness weight.
         Cascading details stored in self.last_num_cascades and self.last_weights_per_cascade.
@@ -47,18 +47,22 @@ class DistributedCascadingEvaluator:
         if not is_valid:
             raise ValueError(f"Invalid vector: {error}")
 
-        # Import parameterizer here to avoid circular imports
+        # Import here to avoid circular imports
         from src.meta.parameterizers.algorithm_parameterizer import UnifiedAlgorithmParameterizer
+        from src.state.store import StateStore
 
         # Get parameters from vector
         max_cascades = int(vector.max_iterations)
         convergence_threshold = vector.convergence_threshold
 
+        # Create single StateStore for all cascades (KEY FIX: persistent across cascades)
+        state_store = StateStore(graph)
+
         prev_weight = 0.0
         weight_per_round = []
         cascade_round = 0
 
-        # Cascading rounds
+        # Cascading rounds with persistent StateStore
         for cascade_round in range(max_cascades):
             # Create fresh parameterizers for this cascade round
             parameterizers = [
@@ -67,11 +71,13 @@ class DistributedCascadingEvaluator:
                 UnifiedAlgorithmParameterizer("luby"),
             ]
 
-            # Run all 3 parameterizers (each node sees only unmatched neighbors)
+            # Run all 3 parameterizers with SAME state_store (KEY FIX)
+            # Each node sees only unmatched neighbors because matched nodes are marked in state_store
             matchings = []
             for parameterizer in parameterizers:
                 try:
-                    matching = parameterizer.execute(graph, vector)
+                    # KEY: Pass state_store so matched nodes from previous cascades are known
+                    matching = parameterizer.execute(graph, vector, state_store=state_store)
                     matchings.append(matching)
                 except Exception:
                     matchings.append({})
@@ -95,13 +101,11 @@ class DistributedCascadingEvaluator:
                     # Convergence reached, stop cascading
                     break
 
-            # Update state for next cascade round:
-            # Matched nodes become inactive (won't be seen as neighbors)
-            # This is handled automatically by parameterizers because:
-            # - Each cascade creates fresh StateStore
-            # - Matched nodes from previous cascade are marked as matched
-            # - get_active_neighbors() filters out matched nodes
-            # - So next cascade effectively sees smaller graph
+            # KEY FIX: Update state_store with matched nodes for next cascade
+            # This ensures matched nodes become inactive (not seen as neighbors) in next cascade
+            for u, v in final_matching.items():
+                state_store.get_node_state(u).set_matched_to(v)
+                state_store.get_node_state(v).set_matched_to(u)
 
             prev_weight = curr_weight
 
