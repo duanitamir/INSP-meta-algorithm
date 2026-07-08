@@ -2,9 +2,13 @@
 
 Consolidates Greedy, Itai-Israeli, and Luby Randomized parameterizers into
 a single generic implementation that dispatches based on algorithm type.
+
+Algorithm declarations are stored in ALGORITHM_DEFINITIONS for dynamic
+configuration system support.
 """
 
 import os
+import random
 from typing import Any, Dict, Tuple, List
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -22,8 +26,42 @@ class UnifiedAlgorithmParameterizer(BaseParameterizer):
     - Itai-Israeli: Guaranteed maximal
     - Luby Randomized: Parallel, tunable via coefficients
 
+    Declares algorithm parameters in ALGORITHM_DEFINITIONS for use by
+    AlgorithmRegistry and dynamic configuration system.
+
     Uses Template Method pattern from base class.
     """
+
+    # Algorithm declarations for dynamic configuration system
+    # Maps algorithm name -> definition with "name" and "parameters" keys
+    ALGORITHM_DEFINITIONS = {
+        "greedy": {
+            "name": "greedy",
+            "parameters": {
+                "max_rounds": (5, 100, lambda: random.randint(5, 100)),
+            },
+        },
+        "itai": {
+            "name": "itai",
+            "parameters": {
+                "timeout_rounds": (1, 20, lambda: random.randint(1, 20)),
+                "max_rounds": (5, 100, lambda: random.randint(5, 100)),
+            },
+        },
+        "luby": {
+            "name": "luby",
+            "parameters": {
+                "base_probability": (0.0, 1.0, lambda: random.uniform(0.0, 1.0)),
+                "coeff_degree": (-1.0, 1.0, lambda: random.uniform(-1.0, 1.0)),
+                "coeff_neighbors_unmatched": (-1.0, 1.0, lambda: random.uniform(-1.0, 1.0)),
+                "coeff_clustering": (-1.0, 1.0, lambda: random.uniform(-1.0, 1.0)),
+                "coeff_matched": (-1.0, 1.0, lambda: random.uniform(-1.0, 1.0)),
+                "coeff_round": (-1.0, 1.0, lambda: random.uniform(-1.0, 1.0)),
+                "coeff_weight": (-1.0, 1.0, lambda: random.uniform(-1.0, 1.0)),
+                "max_rounds": (5, 100, lambda: random.randint(5, 100)),
+            },
+        },
+    }
 
     def __init__(self, algorithm_type: str):
         """Initialize parameterizer for specific algorithm.
@@ -255,7 +293,18 @@ class UnifiedAlgorithmParameterizer(BaseParameterizer):
             if node_state.is_matched():
                 matching[node_id] = node_state.get_matched_to()
 
-        return matching
+        # Validate and enforce matching symmetry
+        # In valid matchings, if A is matched to B, then B must be matched to A
+        # This can fail in randomized algorithms with protocol latency (e.g., Luby)
+        # Remove asymmetric edges where one side didn't reciprocate
+        valid_matching = {}
+        for node_id, matched_to in matching.items():
+            if matched_to in matching and matching[matched_to] == node_id:
+                # Symmetric pair - both point to each other
+                if node_id not in valid_matching:
+                    valid_matching[node_id] = matched_to
+
+        return valid_matching
 
     def name(self) -> str:
         """Return algorithm name."""
