@@ -75,7 +75,12 @@ class StateStore:
         self._node_locks: Dict[int, RLock] = {}
 
         for vertex_id in graph.vertices():
-            self._node_states[vertex_id] = NodeState(vertex_id)
+            node_state = NodeState(vertex_id)
+            # Initialize neighbors dict with local knowledge
+            neighbors = list(graph.neighbors(vertex_id))
+            edge_weights = {n: graph.get_edge_weight(vertex_id, n) for n in neighbors}
+            node_state.initialize_neighbors(neighbors, edge_weights)
+            self._node_states[vertex_id] = node_state
             self._node_locks[vertex_id] = RLock()  # Each node gets its own lock
 
     def get_node_state(self, node_id: int) -> NodeState:

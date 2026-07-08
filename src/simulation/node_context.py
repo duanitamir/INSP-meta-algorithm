@@ -46,6 +46,18 @@ class NodeContext:
     Can be replaced by node-local StateStore in Phase 2.
     """
 
+    cascade_cache: Optional[Dict[str, Any]] = None
+    """Distributed cascade cache with only local knowledge.
+
+    Contains:
+    - my_degree: int
+    - my_neighbors: List[int]
+    - my_edge_weights: Dict[int, float]
+    - neighbor_degrees: Dict[int, int]  (from gossip)
+    - neighbor_state: Dict[int, Dict]   (per-round)
+    - messages_this_round: List[Dict]   (per-round)
+    """
+
     def __post_init__(self) -> None:
         """Validate context on creation."""
         if self.node_id < 0:

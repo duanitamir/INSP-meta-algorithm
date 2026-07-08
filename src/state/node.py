@@ -19,6 +19,9 @@ class NodeState:
         """
         self.node_id = node_id
         self._state: Dict[str, Any] = {}
+        # Local neighbors dict: {neighbor_id: {matched: bool, matched_to: int, ...}}
+        # Each node maintains this independently and updates via messages
+        self.neighbors: Dict[int, Dict[str, Any]] = {}
 
     # Generic state operations
 
@@ -81,6 +84,56 @@ class NodeState:
         """
         return frozenset(self._state.keys())
 
+    # Neighbor management (distributed node state)
+
+    def initialize_neighbors(self, neighbor_ids: list, edge_weights: Dict[int, float]) -> None:
+        """Initialize neighbors dict with local knowledge.
+
+        Args:
+            neighbor_ids: List of neighbor node IDs
+            edge_weights: Dict mapping neighbor_id -> edge weight
+        """
+        self.neighbors = {
+            nid: {
+                "matched": False,
+                "matched_to": None,
+                "weight": edge_weights.get(nid, 0.0),
+            }
+            for nid in neighbor_ids
+        }
+
+    def update_neighbor_status(
+        self, neighbor_id: int, matched: bool, matched_to: Optional[int]
+    ) -> None:
+        """Update neighbor status when receiving a message.
+
+        Called when receiving STATUS_UPDATE message from neighbor.
+
+        Args:
+            neighbor_id: ID of neighbor
+            matched: Whether neighbor is matched
+            matched_to: Who the neighbor is matched to (if matched)
+        """
+        if neighbor_id in self.neighbors:
+            self.neighbors[neighbor_id]["matched"] = matched
+            self.neighbors[neighbor_id]["matched_to"] = matched_to
+
+    def get_unmatched_neighbors(self) -> list:
+        """Get list of unmatched neighbor IDs.
+
+        Returns:
+            List of neighbor IDs that are not matched
+        """
+        return [nid for nid, info in self.neighbors.items() if not info.get("matched", False)]
+
+    def get_matched_neighbors(self) -> list:
+        """Get list of matched neighbor IDs.
+
+        Returns:
+            List of neighbor IDs that are matched
+        """
+        return [nid for nid, info in self.neighbors.items() if info.get("matched", False)]
+
     # Matching-specific operations
 
     def set_matched_to(self, vertex_id: Optional[int]) -> None:
@@ -125,6 +178,7 @@ class NodeState:
         """
         cloned = NodeState(self.node_id)
         cloned._state = copy.deepcopy(self._state)
+        cloned.neighbors = copy.deepcopy(self.neighbors)
         return cloned
 
     def __repr__(self) -> str:

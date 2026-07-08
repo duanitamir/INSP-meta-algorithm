@@ -142,8 +142,16 @@ class ItaiIsraeliMaximalMatching(MatchingAlgorithm):
         # (other nodes may have matched since we last tried)
         if not partner:
             out_messages = self.stage_generate_propose(neighbors, node_id, context)
-            new_state = self._start_negotiation(new_state, out_messages[0].recipient, "proposed")
-            return (new_state, out_messages)
+            recipient = out_messages[0].recipient if out_messages else None
+
+            if recipient is not None:
+                # Valid proposal generated
+                new_state = self._start_negotiation(new_state, recipient, "proposed")
+                return (new_state, out_messages)
+            else:
+                # No valid neighbors (all have higher IDs, will accept their proposals)
+                new_state.set("active", True)
+                return (new_state, [])
         else:
             # Already negotiating, increment timeout counter
             stage_round = new_state.get("stage_round", 0)
@@ -192,6 +200,7 @@ class ItaiIsraeliMaximalMatching(MatchingAlgorithm):
         Itai-Israeli algorithm proposal: which neighbors to propose to?
 
         Returns proposals only to neighbors (local scope), not entire graph.
+        CRITICAL: Only propose to neighbors with ID < node_id to prevent mutual proposals.
 
         Args:
             node_id: This node's ID
@@ -207,28 +216,51 @@ class ItaiIsraeliMaximalMatching(MatchingAlgorithm):
         best_neighbor = None
         best_weight = -1
 
+        # Only consider neighbors with smaller IDs to prevent mutual proposals
         for neighbor in neighbors:
-            weight = context.graph.get_edge_weight(node_id, neighbor)
-            if weight > best_weight:
-                best_weight = weight
-                best_neighbor = neighbor
+            if neighbor < node_id:  # KEY FIX: directional proposal
+                weight = context.graph.get_edge_weight(node_id, neighbor)
+                if weight > best_weight:
+                    best_weight = weight
+                    best_neighbor = neighbor
 
         if best_neighbor is None:
             return {}
 
-        # Itai-Israeli: propose to best neighbor only
+        # Itai-Israeli: propose to best neighbor only (with lower ID)
         return {best_neighbor: best_weight}
 
     def stage_generate_propose(self, neighbors, node_id, context):
-        """Generate PROPOSE to best (highest weight) neighbor."""
+        """Generate PROPOSE to best (highest weight) neighbor.
+
+        CRITICAL FIX: Only propose to neighbors with ID < node_id to prevent mutual proposals.
+        This prevents deadlocks where both nodes end up in "accepting" stage simultaneously.
+        In Itai-Israeli, only one direction of a potential pair should initiate.
+        """
         best_neighbor = None
         best_weight = -1
 
+        # Only consider neighbors with smaller IDs to prevent mutual proposals
         for neighbor in neighbors:
-            weight = context.graph.get_edge_weight(node_id, neighbor)
-            if weight > best_weight:
-                best_weight = weight
-                best_neighbor = neighbor
+            if neighbor < node_id:  # KEY FIX: directional proposal
+                weight = context.graph.get_edge_weight(node_id, neighbor)
+                if weight > best_weight:
+                    best_weight = weight
+                    best_neighbor = neighbor
+
+        # If no valid neighbor found (all neighbors have higher IDs), return empty proposal
+        # This node will accept proposals from higher-ID neighbors instead
+        if best_neighbor is None:
+            return [Message(
+                sender=node_id,
+                recipient=None,  # Placeholder - signal that no valid proposal exists
+                payload={
+                    "type": "PROPOSE",
+                    "weight": -1,
+                    "proposer_id": node_id,
+                },
+                round_num=context.round_num,
+            )]
 
         return [Message(
             sender=node_id,

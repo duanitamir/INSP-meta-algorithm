@@ -35,7 +35,14 @@ class AlgorithmParameterizer(ABC):
     - name(): Human-readable algorithm name (subclass)
     """
 
-    def execute(self, graph: Any, canonical_vector: CanonicalVector, state_store: Any = None) -> Dict[int, int]:
+    def execute(
+        self,
+        graph: Any,
+        canonical_vector: CanonicalVector,
+        state_store: Any = None,
+        cascade_cache: Dict[str, Any] | None = None,
+        executor: Any = None,
+    ) -> Dict[int, int]:
         """Execute algorithm with canonical vector parameters (Template Method).
 
         Implements standard flow: validate → extract params → run → validate output.
@@ -44,6 +51,8 @@ class AlgorithmParameterizer(ABC):
             graph: GraphManager instance
             canonical_vector: 10-parameter chromosome (algorithm-specific params)
             state_store: Optional existing StateStore to reuse (for cascading). If None, creates fresh.
+            cascade_cache: Optional distributed cascade cache (for performance). Contains local knowledge only.
+            executor: Optional ThreadPoolExecutor to reuse (3D optimization). If None, creates fresh.
 
         Returns:
             Dict mapping node_id -> matched_partner (maximal matching).
@@ -59,8 +68,14 @@ class AlgorithmParameterizer(ABC):
         # Template method: extract algorithm-specific parameters
         parameters = self._extract_parameters(canonical_vector)
 
-        # Template method: run the algorithm (with optional state_store for cascading)
-        matching = self._run_algorithm(graph, parameters, state_store=state_store)
+        # Template method: run the algorithm (with optional state_store for cascading, cascade_cache for perf, executor for pooling)
+        matching = self._run_algorithm(
+            graph,
+            parameters,
+            state_store=state_store,
+            cascade_cache=cascade_cache,
+            executor=executor,
+        )
 
         # Template method: validate output
         self._validate_output(matching)
@@ -106,13 +121,22 @@ class AlgorithmParameterizer(ABC):
         pass
 
     @abstractmethod
-    def _run_algorithm(self, graph: Any, parameters: Dict[str, Any], state_store: Any = None) -> Dict[int, int]:
+    def _run_algorithm(
+        self,
+        graph: Any,
+        parameters: Dict[str, Any],
+        state_store: Any = None,
+        cascade_cache: Dict[str, Any] | None = None,
+        executor: Any = None,
+    ) -> Dict[int, int]:
         """Run the matching algorithm with extracted parameters.
 
         Args:
             graph: GraphManager instance
             parameters: Algorithm-specific parameters from _extract_parameters()
             state_store: Optional existing StateStore to reuse (for cascading). If None, creates fresh.
+            cascade_cache: Optional distributed cascade cache for local knowledge. If None, creates fresh.
+            executor: Optional ThreadPoolExecutor to reuse (3D optimization). If None, creates fresh.
 
         Returns:
             Dict mapping node_id -> matched_partner
