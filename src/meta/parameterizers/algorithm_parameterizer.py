@@ -26,42 +26,32 @@ class UnifiedAlgorithmParameterizer(BaseParameterizer):
     - Itai-Israeli: Guaranteed maximal
     - Luby Randomized: Parallel, tunable via coefficients
 
-    Declares algorithm parameters in ALGORITHM_DEFINITIONS for use by
-    AlgorithmRegistry and dynamic configuration system.
+    Reads algorithm parameters from algorithm classes' PARAMETER_DEFINITION
+    for use by AlgorithmRegistry and dynamic configuration system.
 
     Uses Template Method pattern from base class.
     """
 
-    # Algorithm declarations for dynamic configuration system
-    # Maps algorithm name -> definition with "name" and "parameters" keys
-    ALGORITHM_DEFINITIONS = {
-        "greedy": {
-            "name": "greedy",
-            "parameters": {
-                "max_rounds": (5, 100, lambda: random.randint(5, 100)),
-            },
-        },
-        "itai": {
-            "name": "itai",
-            "parameters": {
-                "timeout_rounds": (1, 20, lambda: random.randint(1, 20)),
-                "max_rounds": (5, 100, lambda: random.randint(5, 100)),
-            },
-        },
-        "luby": {
-            "name": "luby",
-            "parameters": {
-                "base_probability": (0.0, 1.0, lambda: random.uniform(0.0, 1.0)),
-                "coeff_degree": (-1.0, 1.0, lambda: random.uniform(-1.0, 1.0)),
-                "coeff_neighbors_unmatched": (-1.0, 1.0, lambda: random.uniform(-1.0, 1.0)),
-                "coeff_clustering": (-1.0, 1.0, lambda: random.uniform(-1.0, 1.0)),
-                "coeff_matched": (-1.0, 1.0, lambda: random.uniform(-1.0, 1.0)),
-                "coeff_round": (-1.0, 1.0, lambda: random.uniform(-1.0, 1.0)),
-                "coeff_weight": (-1.0, 1.0, lambda: random.uniform(-1.0, 1.0)),
-                "max_rounds": (5, 100, lambda: random.randint(5, 100)),
-            },
-        },
-    }
+    @property
+    def ALGORITHM_DEFINITIONS(self) -> Dict[str, Dict]:
+        """Dynamically build algorithm definitions from algorithm classes.
+
+        Each algorithm class declares its parameters in PARAMETER_DEFINITION.
+        This property reads from those classes to keep algorithms self-contained.
+
+        Returns:
+            Dict mapping algorithm name -> definition with "name" and "parameters" keys
+        """
+        from src.algorithms.implementations.greedy_matching import GreedyMatching
+        from src.algorithms.implementations.itai_israeli import ItaiIsraeliMaximalMatching
+        from src.algorithms.implementations.luby_randomized import LubyRandomizedMatching
+
+        definitions = {}
+        for algo_class in [GreedyMatching, ItaiIsraeliMaximalMatching, LubyRandomizedMatching]:
+            if hasattr(algo_class, "PARAMETER_DEFINITION"):
+                param_def = algo_class.PARAMETER_DEFINITION
+                definitions[param_def["name"]] = param_def
+        return definitions
 
     def __init__(self, algorithm_type: str):
         """Initialize parameterizer for specific algorithm.
@@ -154,23 +144,38 @@ class UnifiedAlgorithmParameterizer(BaseParameterizer):
         # Use provided state_store (for cascading) or create fresh one
         if state_store is None:
             state_store = StateStore(graph)
-            # Only initialize algorithm state for fresh StateStore
-            # Do NOT initialize if reusing state_store (cascading) as matched nodes persist across cascades
-            algorithm = self._get_algorithm_instance()
-            algorithm.initialize_state(state_store, graph)
-        else:
-            # For cascading: state_store is reused, matched nodes should persist
-            # Just reset round-specific state if needed, but preserve matched_to
-            pass
+
+        # ALWAYS initialize algorithm state (for CASCADE 0 to match standard evaluator behavior)
+        # For cascading: preserve matched_to from previous cascades, but reset other fields
+        # For standard: fresh state for all nodes
+        algorithm = self._get_algorithm_instance()
+
+        # Preserve matched_to for cascading re-runs (matched nodes should persist)
+        preserved_matched = {}
+        for node_id in graph.vertices():
+            node_state = state_store.get_node_state(node_id)
+            matched_to = node_state.get("matched_to")
+            if matched_to is not None:
+                preserved_matched[node_id] = matched_to
+
+        # Initialize algorithm state (clears all fields for all nodes)
+        algorithm.initialize_state(state_store, graph)
+
+        # Restore matched_to for nodes that were matched in previous cascades
+        for node_id, matched_to in preserved_matched.items():
+            node_state = state_store.get_node_state(node_id)
+            node_state.set("matched_to", matched_to)
+            state_store.update_node_state(node_id, node_state)
 
         message_queue = MessageQueue(graph)
         # Use the full max_rounds value BUT cap at reasonable limit for performance
         # Old cap of 3 was too restrictive for Itai-Israeli (recipients couldn't process CONFIRMs)
-        # New cap: use 5 which gives enough rounds for Itai handshake while keeping performance reasonable
-        # Math: ~3 rounds for Greedy/Luby convergence + 2 rounds for Itai CONFIRM processing = 5 needed
+        # Cap of 5 was breaking Luby - randomized protocol needs more rounds to establish matches
+        # New cap: use 10 which gives enough rounds for both Itai handshake AND Luby randomized convergence
+        # Math: ~3 rounds for Greedy convergence + 5-7 rounds for Luby randomized protocol + 2 rounds for Itai CONFIRM = 10 needed
         # Allows consecutive_inactive_rounds counter to work: need 2 consecutive for termination
         max_rounds_user = parameters.get("max_rounds", 100)
-        max_rounds = min(max_rounds_user, 5)
+        max_rounds = min(max_rounds_user, 10)
         self._temp_vector = self._create_vector_from_params(parameters, max_rounds)
 
         # Determine parallelism: scale with available cores
@@ -303,6 +308,20 @@ class UnifiedAlgorithmParameterizer(BaseParameterizer):
                 # Symmetric pair - both point to each other
                 if node_id not in valid_matching:
                     valid_matching[node_id] = matched_to
+
+        # CRITICAL FIX: Clear invalid (asymmetric) matches from state_store
+        # If a node had matched_to set during algorithm execution but the pair is
+        # asymmetric and was filtered out, the node's matched_to state persists
+        # incorrectly into the next cascade. We must clear these invalid states.
+        valid_node_ids = set(valid_matching.keys()) | set(valid_matching.values())
+        for node_id in graph.vertices():
+            node_state = state_store.get_node_state(node_id)
+            if node_state.is_matched() and node_id not in valid_node_ids:
+                # This node was marked as matched during algorithm execution,
+                # but its match is not in the final valid symmetric matching.
+                # Clear the matched_to state so next cascade doesn't see stale data.
+                node_state.delete("matched_to")
+                state_store.update_node_state(node_id, node_state)
 
         return valid_matching
 

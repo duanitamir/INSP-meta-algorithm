@@ -35,41 +35,33 @@ class AlgorithmRegistry:
         self._load_from_parameterizers()
 
     def _load_from_parameterizers(self) -> None:
-        """Load algorithm definitions from parameterizers.
+        """Load algorithm definitions from algorithm classes.
 
-        Checks UnifiedAlgorithmParameterizer.ALGORITHM_DEFINITIONS first (primary source).
-        Falls back to individual algorithm PARAMETER_DEFINITION attributes if needed.
+        Each algorithm class declares its parameters in PARAMETER_DEFINITION.
+        This method reads from those classes to keep algorithms self-contained.
         """
         definitions = {}
 
-        # Try to load from UnifiedAlgorithmParameterizer.ALGORITHM_DEFINITIONS (primary source)
         try:
-            from src.meta.parameterizers.algorithm_parameterizer import UnifiedAlgorithmParameterizer
+            from src.algorithms.implementations.greedy_matching import GreedyMatching
+            from src.algorithms.implementations.itai_israeli import ItaiIsraeliMaximalMatching
+            from src.algorithms.implementations.luby_randomized import LubyRandomizedMatching
 
-            if hasattr(UnifiedAlgorithmParameterizer, "ALGORITHM_DEFINITIONS"):
-                definitions = UnifiedAlgorithmParameterizer.ALGORITHM_DEFINITIONS.copy()
+            # Auto-discover parameter definitions from algorithm classes
+            algorithms_to_load = [
+                GreedyMatching,
+                ItaiIsraeliMaximalMatching,
+                LubyRandomizedMatching,
+            ]
+
+            for algo_class in algorithms_to_load:
+                if hasattr(algo_class, "PARAMETER_DEFINITION"):
+                    param_def = algo_class.PARAMETER_DEFINITION
+                    algo_name = param_def.get("name")
+                    if algo_name:
+                        definitions[algo_name] = param_def
         except (ImportError, AttributeError):
             pass
-
-        # Fall back to loading from individual algorithm PARAMETER_DEFINITION attributes
-        if not definitions:
-            try:
-                from src.algorithms.implementations.greedy_matching import GreedyMatching
-                from src.algorithms.implementations.itai_israeli import ItaiIsraeliMaximalMatching
-                from src.algorithms.implementations.luby_randomized import LubyRandomizedMatching
-
-                # Auto-discover parameter definitions from algorithm classes
-                algorithms_to_load = [
-                    (GreedyMatching, "greedy"),
-                    (ItaiIsraeliMaximalMatching, "itai"),
-                    (LubyRandomizedMatching, "luby"),
-                ]
-
-                for algo_class, algo_name in algorithms_to_load:
-                    if hasattr(algo_class, "PARAMETER_DEFINITION"):
-                        definitions[algo_name] = algo_class.PARAMETER_DEFINITION
-            except (ImportError, AttributeError):
-                pass
 
         with self._registry_lock:
             self._algorithms = definitions

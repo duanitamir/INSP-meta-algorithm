@@ -49,6 +49,14 @@ from src.utils.types import RoundNumber, Edge, MatchedEdge
 class GreedyMatching(MatchingAlgorithm):
     """Simplified Greedy Distributed Matching with Mutual Bidding."""
 
+    # Self-contained parameter definition
+    PARAMETER_DEFINITION = {
+        "name": "greedy",
+        "parameters": {
+            "max_rounds": (5, 100, lambda: __import__("random").randint(5, 100)),
+        },
+    }
+
     def __init__(self):
 
         self._metadata = AlgorithmMetadata(

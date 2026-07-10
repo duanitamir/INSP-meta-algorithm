@@ -43,6 +43,15 @@ from src.utils.types import RoundNumber
 class ItaiIsraeliMaximalMatching(MatchingAlgorithm):
     """Itai-Israeli Distributed Maximal Matching Algorithm."""
 
+    # Self-contained parameter definition
+    PARAMETER_DEFINITION = {
+        "name": "itai",
+        "parameters": {
+            "timeout_rounds": (1, 20, lambda: __import__("random").randint(1, 20)),
+            "max_rounds": (5, 100, lambda: __import__("random").randint(5, 100)),
+        },
+    }
+
     def __init__(self, timeout_rounds: int = 5):
         self.timeout_rounds = timeout_rounds
 

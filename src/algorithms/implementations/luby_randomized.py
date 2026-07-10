@@ -24,6 +24,21 @@ from src.utils.types import RoundNumber
 class LubyRandomizedMatching(MatchingAlgorithm):
     """Luby-style Randomized Distributed Maximal Matching Algorithm."""
 
+    # Self-contained parameter definition
+    PARAMETER_DEFINITION = {
+        "name": "luby",
+        "parameters": {
+            "base_probability": (0.0, 1.0, lambda: random.uniform(0.0, 1.0)),
+            "coeff_degree": (-1.0, 1.0, lambda: random.uniform(-1.0, 1.0)),
+            "coeff_neighbors_unmatched": (-1.0, 1.0, lambda: random.uniform(-1.0, 1.0)),
+            "coeff_clustering": (-1.0, 1.0, lambda: random.uniform(-1.0, 1.0)),
+            "coeff_matched": (-1.0, 1.0, lambda: random.uniform(-1.0, 1.0)),
+            "coeff_round": (-1.0, 1.0, lambda: random.uniform(-1.0, 1.0)),
+            "coeff_weight": (-1.0, 1.0, lambda: random.uniform(-1.0, 1.0)),
+            "max_rounds": (5, 100, lambda: random.randint(5, 100)),
+        },
+    }
+
     def __init__(
         self,
         seed: int | None = None,

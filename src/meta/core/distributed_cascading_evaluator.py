@@ -72,19 +72,25 @@ class DistributedCascadingEvaluator:
 
         # Cascading rounds with persistent StateStore
         for cascade_round in range(max_cascades):
-            # Build distributed cascade cache for this cascade
-            # Contains only local knowledge: my_degree, my_neighbors, my_edge_weights,
-            # neighbor_degrees, neighbor_state, messages
-            cascade_cache = CascadeCacheBuilder.build_cascade_cache(
-                graph, state_store, cascade_round
-            )
-
-            # CRITICAL: Identify already-matched nodes BEFORE running algorithms
-            # This prevents cascades from re-matching previously-matched nodes
+            # CRITICAL: Snapshot matched nodes BEFORE building cache and running algorithms
+            # This captures what was matched in PREVIOUS cascades, not what the current
+            # algorithm execution will match. The algorithms themselves update the state_store,
+            # so we need to capture the "before" state to distinguish old vs new matches.
             already_matched_nodes = set()
             for node_id in graph.vertices():
                 if state_store.get_node_state(node_id).is_matched():
                     already_matched_nodes.add(node_id)
+
+            # Build distributed cascade cache for this cascade (skip on CASCADE 0 for consistency)
+            # Contains only local knowledge: my_degree, my_neighbors, my_edge_weights,
+            # neighbor_degrees, neighbor_state, messages
+            # CASCADE 0: use None so CASCADE 0 behaves identically to standard evaluator
+            # CASCADE 1+: use cache for performance (only unmatched nodes in shrinking graph)
+            cascade_cache = None
+            if cascade_round > 0:
+                cascade_cache = CascadeCacheBuilder.build_cascade_cache(
+                    graph, state_store, cascade_round
+                )
 
             # Create fresh parameterizers for this cascade round
             parameterizers = [
@@ -93,17 +99,21 @@ class DistributedCascadingEvaluator:
                 UnifiedAlgorithmParameterizer("luby"),
             ]
 
-            # Run all 3 parameterizers with SAME state_store (KEY FIX)
-            # Each node sees only unmatched neighbors because matched nodes are marked in state_store
+            # Run all 3 parameterizers with FRESH state_store for each algorithm (CASCADE 0)
+            # This ensures each algorithm runs on the same clean graph state, not polluted by previous algorithms' matches
+            # CASCADE 1+: Share state_store to preserve matched nodes across cascades
             matchings = []
-            for parameterizer in parameterizers:
+            for i, parameterizer in enumerate(parameterizers):
                 try:
-                    # KEY: Pass state_store AND cascade_cache so algorithms can use local knowledge
-                    # Also pass executor so algorithm can reuse it across all rounds and cascades
+                    # CASCADE 0: Use None state_store (fresh for each algorithm, like standard evaluator)
+                    # CASCADE 1+: Use shared state_store (preserve matched nodes from previous cascades)
+                    exec_state_store = None if cascade_round == 0 else state_store
+
+                    # KEY: Pass cascade_cache (if cascade > 0) and executor for reuse
                     matching = parameterizer.execute(
                         graph,
                         vector,
-                        state_store=state_store,
+                        state_store=exec_state_store,
                         cascade_cache=cascade_cache,
                         executor=executor,
                     )
