@@ -90,6 +90,24 @@ class StateStore:
         with self._node_locks[node_id]:
             return self._node_states[node_id].clone()
 
+    def get_node_state_ref(self, node_id: int) -> NodeState:
+        """Get state for a node (borrowed reference).
+
+        Args:
+            node_id: Node ID
+
+        Returns:
+            NodeState reference (NOT a clone) - READ-ONLY use only
+
+        Raises:
+            ValueError: If node_id not in state store
+        """
+        if node_id not in self._node_states:
+            raise ValueError(f"Node {node_id} not in state store")
+        # No lock needed for read-only access in this pattern
+        # Caller must NOT modify the returned state
+        return self._node_states[node_id]
+
     def get_all_states(self) -> Dict[int, NodeState]:
         """Get all node states (defensive copy)."""
         return {vid: state.clone() for vid, state in self._node_states.items()}
@@ -104,6 +122,25 @@ class StateStore:
             raise ValueError(f"Node {node_id} not in state store")
         with self._node_locks[node_id]:
             self._node_states[node_id] = state.clone()
+
+    def batch_update_node_states(self, states: Dict[int, NodeState]) -> None:
+        """Batch update multiple node states with minimal lock contention.
+
+        Args:
+            states: Dict mapping node_id to updated NodeState
+
+        Raises:
+            ValueError: If any node_id is not in the state store
+        """
+        # Validate all nodes exist first (fail fast)
+        for node_id in states:
+            if node_id not in self._node_states:
+                raise ValueError(f"Node {node_id} not in state store")
+
+        # Apply all updates (acquire locks in consistent order to prevent deadlocks)
+        for node_id in sorted(states.keys()):
+            with self._node_locks[node_id]:
+                self._node_states[node_id] = states[node_id].clone()
 
     def update_all_states(self, states: Dict[int, NodeState]) -> None:
         """Atomically update all node states."""

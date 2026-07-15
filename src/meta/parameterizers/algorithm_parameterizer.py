@@ -209,6 +209,10 @@ class UnifiedAlgorithmParameterizer(BaseParameterizer):
         consecutive_inactive_rounds = 0
 
         with executor_context:
+            # Pre-compute round statistics for Luby
+            # These don't change within a round, so compute once instead of per-node
+            self._round_stats = self._compute_round_statistics(graph)
+
             # Loop through rounds until convergence or max_rounds
             for round_num in range(max_rounds):
                 any_messages_sent = False
@@ -221,21 +225,34 @@ class UnifiedAlgorithmParameterizer(BaseParameterizer):
                 # Update neighbor status from messages (distributed approach)
                 # Each node learns about matches via status messages from neighbors
                 # Messages are sent at end of round, so this will update state for next round
-                # For now, this is a no-op as algorithms don't yet send STATUS_UPDATE messages
-                # In future: algorithms should send status updates so neighbors learn about matches
-                for node_id in node_ids:
-                    node_state = state_store.get_node_state(node_id)
-                    messages = node_messages[node_id]
-                    for msg in messages:
-                        # Messages have .payload dict with "type" field
-                        if hasattr(msg, "payload") and isinstance(msg.payload, dict):
-                            if msg.payload.get("type") == "STATUS_UPDATE":
-                                # Node received status update from a neighbor
-                                neighbor_id = msg.sender
-                                matched = msg.payload.get("matched", False)
-                                matched_to = msg.payload.get("matched_to")
-                                node_state.update_neighbor_status(neighbor_id, matched, matched_to)
-                    state_store.update_node_state(node_id, node_state)
+                #Skip message processing loop if no STATUS_UPDATE messages exist
+                # Most rounds have no STATUS_UPDATE messages, so skip the O(n) loop entirely
+                has_status_updates = any(
+                    any(hasattr(msg, "payload") and isinstance(msg.payload, dict) and msg.payload.get("type") == "STATUS_UPDATE"
+                        for msg in messages)
+                    for messages in node_messages.values()
+                )
+
+                if has_status_updates:
+                    # PHASE 1.2: Process messages and collect state updates for batching
+                    message_updates: Dict[int, NodeState] = {}
+                    for node_id in node_ids:
+                        node_state = state_store.get_node_state(node_id)
+                        messages = node_messages[node_id]
+                        for msg in messages:
+                            # Messages have .payload dict with "type" field
+                            if hasattr(msg, "payload") and isinstance(msg.payload, dict):
+                                if msg.payload.get("type") == "STATUS_UPDATE":
+                                    # Node received status update from a neighbor
+                                    neighbor_id = msg.sender
+                                    matched = msg.payload.get("matched", False)
+                                    matched_to = msg.payload.get("matched_to")
+                                    node_state.update_neighbor_status(neighbor_id, matched, matched_to)
+                        message_updates[node_id] = node_state
+
+                    # Apply all message processing updates in one batch (reduces lock contention)
+                    if message_updates:
+                        state_store.batch_update_node_states(message_updates)
 
                 # PARALLELIZED: Execute all nodes concurrently for this round
                 def execute_node(node_id: int) -> Tuple[int, List[Dict[str, Any]]]:
@@ -255,21 +272,26 @@ class UnifiedAlgorithmParameterizer(BaseParameterizer):
                     )
 
                     new_state, out_messages = self.execute_local_step(context)
-                    state_store.update_node_state(node_id, new_state)
-
-                    return node_id, out_messages
+                    return node_id, new_state, out_messages
 
                 # Execute all nodes in parallel (reusing executor from cascade level)
                 futures = {executor.submit(execute_node, nid): nid for nid in node_ids}
 
+                # Collect all execution results before applying updates (Phase 1.2 batch update)
+                execution_updates: Dict[int, NodeState] = {}
                 for future in as_completed(futures):
                     try:
-                        node_id, out_messages = future.result()
+                        node_id, new_state, out_messages = future.result()
+                        execution_updates[node_id] = new_state
                         if out_messages:
                             message_queue.send_batch(out_messages)
                             any_messages_sent = True
                     except Exception as e:
                         print(f"Error executing node {node_id}: {e}")
+
+                # Apply all execution updates in one batch (Phase 1.2 optimization)
+                if execution_updates:
+                    state_store.batch_update_node_states(execution_updates)
 
                 # Check if all nodes are inactive (true convergence)
                 # With Itai-Israeli handshake, recipients need extra rounds to process CONFIRMs
@@ -405,27 +427,17 @@ class UnifiedAlgorithmParameterizer(BaseParameterizer):
             coeff_round = node_context.vector.luby_coeff_round
             coeff_weight = node_context.vector.luby_coeff_weight
 
-            # Compute and cache global graph statistics (computed once per round, not per node)
-            # This uses global knowledge and is NOT distributed-friendly, but maintains correctness
-            # In a true distributed system, nodes would use local normalization (normalized against neighbors)
-            if (
-                not hasattr(self, "_cached_round")
-                or self._cached_round != node_context.round_number
-            ):
-                all_degrees = [graph.degree(v) for v in graph.vertices()]
-                self._max_degree = max(all_degrees) if all_degrees else 1
-
-                all_weights = []
-                for v in graph.vertices():
-                    vneighbors = list(graph.neighbors(v))
-                    if vneighbors:
-                        vweights = [graph.get_edge_weight(v, vn) for vn in vneighbors]
-                        all_weights.append(sum(vweights) / len(vweights))
-                    else:
-                        all_weights.append(0.0)
-                self._max_weight = max(all_weights) if all_weights else 1.0
-                self._max_neighbors = max(all_degrees) if all_degrees else 1
-                self._cached_round = node_context.round_number
+            # OPTIMIZATION: Use pre-computed round statistics (computed once at start of algorithm)
+            # These used to be computed inside activation_fn, wasting O(n×d) time per node
+            # Now they're cached in self._round_stats (computed once before any parallel execution)
+            # Fallback for direct calls (e.g., in tests): compute on-the-fly
+            if not hasattr(self, '_round_stats') or self._round_stats is None:
+                round_stats = self._compute_round_statistics(node_context.graph)
+            else:
+                round_stats = self._round_stats
+            max_degree = round_stats["max_degree"]
+            max_weight = round_stats["max_weight"]
+            max_neighbors = round_stats["max_neighbors"]
 
             def activation_fn(nid: int) -> float:
                 """Compute adaptive activation probability for a node."""
@@ -435,7 +447,7 @@ class UnifiedAlgorithmParameterizer(BaseParameterizer):
                 # Use local neighbors dict from node state (distributed approach)
                 neighbors = list(current_state.neighbors.keys())
                 degree = len(neighbors)
-                normalized_degree = degree / self._max_degree if self._max_degree > 0 else 0
+                normalized_degree = degree / max_degree if max_degree > 0 else 0
 
                 # Count unmatched neighbors (use local neighbors dict)
                 unmatched_count = current_state.get_unmatched_neighbors().__len__()
@@ -463,7 +475,7 @@ class UnifiedAlgorithmParameterizer(BaseParameterizer):
                     avg_weight = sum(weights) / len(weights)
                 else:
                     avg_weight = 0.0
-                normalized_weight = avg_weight / self._max_weight if self._max_weight > 0 else 0
+                normalized_weight = avg_weight / max_weight if max_weight > 0 else 0
 
                 # Adaptive probability
                 prob = base_prob
@@ -489,6 +501,38 @@ class UnifiedAlgorithmParameterizer(BaseParameterizer):
             )
 
         return new_state, outgoing_messages
+
+    def _compute_round_statistics(self, graph: Any) -> Dict[str, float]:
+        """Compute global statistics for Luby activation function (once per algorithm run).
+
+       These are expensive O(n×d) computations that used to happen
+        inside activation_fn (called 1000+ times per cascade). Now computed once and cached.
+
+        Args:
+            graph: GraphManager instance
+
+        Returns:
+            Dict with max_degree, max_weight, max_neighbors
+        """
+        all_degrees = [graph.degree(v) for v in graph.vertices()]
+        max_degree = max(all_degrees) if all_degrees else 1
+
+        all_weights = []
+        for v in graph.vertices():
+            vneighbors = list(graph.neighbors(v))
+            if vneighbors:
+                vweights = [graph.get_edge_weight(v, vn) for vn in vneighbors]
+                all_weights.append(sum(vweights) / len(vweights))
+            else:
+                all_weights.append(0.0)
+        max_weight = max(all_weights) if all_weights else 1.0
+        max_neighbors = max(all_degrees) if all_degrees else 1
+
+        return {
+            "max_degree": max_degree,
+            "max_weight": max_weight,
+            "max_neighbors": max_neighbors,
+        }
 
     def propose_to_neighbors(
         self, node_id: int, neighbors: List[int], context: Any
