@@ -302,7 +302,7 @@ class UnifiedAlgorithmParameterizer(BaseParameterizer):
                     for nid in node_ids
                 )
 
-                if all_inactive:
+                if round_num % 3 == 0 and all_inactive:
                     consecutive_inactive_rounds += 1
                     # Require 2 consecutive rounds of inactivity for true convergence
                     # Round 1: Initiators finish, may still have messages to send
