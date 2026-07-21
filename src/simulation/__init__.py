@@ -1,3 +1,3 @@
-from .config import SimulationConfig
+from src.config import ExperimentConfig
 
-__all__ = ["SimulationConfig"]
+__all__ = ["ExperimentConfig"]

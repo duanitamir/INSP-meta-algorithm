@@ -1,5 +1,5 @@
 import pytest
-from src.simulation import SimulationConfig
+from src.config import ExperimentConfig
 from src.state.store import StateStore
 
 # Import all graph fixtures
@@ -39,4 +39,4 @@ def state_store_simple(simple_graph):
 @pytest.fixture
 def simulation_config():
     """Create a simulation config for testing."""
-    return SimulationConfig(max_rounds=100, collect_snapshots=True)
+    return ExperimentConfig(max_rounds=100, collect_snapshots=True)
