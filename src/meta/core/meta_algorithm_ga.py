@@ -49,7 +49,7 @@ class MetaAlgorithmGA:
             elite_fraction: Fraction of population to keep as elite [0.1, 0.9]
             early_stop_generations: Stop if no improvement for N generations (default 10)
             num_workers: Number of parallel workers for evaluation
-            use_cascading: If True, use CascadingEvaluator; if False, use standard FitnessEvaluator
+            use_cascading: If True, use DistributedCascadingEvaluator; if False, use standard FitnessEvaluator
             use_distributed: If True, use distributed orchestrator (autonomous nodes, message passing)
         """
         if fitness_evaluator is None:
@@ -58,9 +58,9 @@ class MetaAlgorithmGA:
                 # Distributed mode: autonomous nodes with message passing
                 self.fitness_evaluator = FitnessEvaluator(use_distributed=True, max_workers=num_workers)
             elif use_cascading:
-                # Cascading mode: run algorithms repeatedly on shrinking graphs
-                from src.meta.core.distributed_cascading_evaluator import CascadingEvaluator
-                self.fitness_evaluator = CascadingEvaluator()
+                # Cascading mode: run autonomous nodes repeatedly on shrinking graphs
+                from src.meta.core.distributed_cascading_evaluator import DistributedCascadingEvaluator
+                self.fitness_evaluator = DistributedCascadingEvaluator()
             else:
                 # Standard centralized mode
                 self.fitness_evaluator = FitnessEvaluator(use_distributed=False)

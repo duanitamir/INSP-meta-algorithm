@@ -5,7 +5,7 @@ import networkx as nx
 from src.graph.graph_manager import GraphManager
 from src.meta.core.canonical_vector import CanonicalVector
 from src.meta.core.fitness_evaluator import FitnessEvaluator
-from src.meta.core.distributed_cascading_evaluator import CascadingEvaluator
+from src.meta.core.distributed_cascading_evaluator import DistributedCascadingEvaluator
 from src.meta.parameterizers.algorithm_parameterizer import UnifiedAlgorithmParameterizer
 
 
@@ -49,7 +49,7 @@ def get_baseline_fitness(graph: GraphManager, config) -> float:
 
 
 def get_cascading_baseline(graph: GraphManager, config) -> float:
-    """Compute cascading baseline using CascadingEvaluator.
+    """Compute cascading baseline using DistributedCascadingEvaluator.
 
     Args:
         graph: GraphManager instance
@@ -60,7 +60,7 @@ def get_cascading_baseline(graph: GraphManager, config) -> float:
     """
     try:
         vector = CanonicalVector()
-        cascading = CascadingEvaluator()
+        cascading = DistributedCascadingEvaluator()
         return cascading.evaluate(graph, vector)
     except Exception:
         return 0.0

@@ -1,39 +1,39 @@
-"""Cascading fitness evaluator for GA optimization.
+"""Distributed cascading evaluator for GA fitness evaluation.
 
-Implements cascading rounds on shrinking graphs using centralized approach.
-Each cascade runs 3 algorithms independently on progressively smaller graphs
-where matched nodes are removed between passes.
-
-Matched nodes become inactive between cascades, creating progressively smaller graphs.
-Multiple cascades accumulate matches from each pass on the shrinking graph.
+Implements cascading rounds using DistributedOrchestrator where autonomous nodes
+run repeatedly on shrinking graphs. Matched nodes become inactive between cascades,
+creating a logically smaller graph each round.
 """
 
 from src.graph.graph_manager import GraphManager
 from src.meta.core.canonical_vector import CanonicalVector
 
 
-class CascadingEvaluator:
-    """Evaluates fitness using centralized cascading rounds on shrinking graphs.
+class DistributedCascadingEvaluator:
+    """Evaluates fitness using distributed cascading rounds with autonomous nodes.
 
     For each cascade round:
     1. Create filtered graph with only unmatched nodes
-    2. Run all 3 algorithms independently (fresh StateStore each)
-    3. Merge matchings via conflict resolution
+    2. Run DistributedOrchestrator (autonomous nodes with message passing)
+    3. Collect matched edges from autonomous node coordination
     4. Mark matched nodes as inactive for next cascade
     5. Check convergence (improvement < threshold)
     6. Continue if improvement sufficient, else stop
 
-    Each algorithm gets independent access to nodes in the current cascade,
-    producing different matchings that merge together for better results.
+    This implements TRUE distributed cascading where:
+    - Autonomous nodes execute with message passing coordination
+    - Conflict resolution via endpoint voting
+    - Convergence detection via quorum voting
+    - Multi-pass refinement on shrinking graphs
     """
 
     def __init__(self) -> None:
-        """Initialize cascading evaluator."""
+        """Initialize distributed cascading evaluator."""
         self.last_num_cascades = 0
         self.last_weights_per_cascade = []
 
     def evaluate(self, graph: GraphManager, vector: CanonicalVector) -> float:
-        """Evaluate fitness using cascading rounds on shrinking graphs.
+        """Evaluate fitness using distributed cascading rounds with autonomous nodes.
 
         Compatible with FitnessEvaluator interface - returns just the fitness weight.
         Cascading details stored in self.last_num_cascades and self.last_weights_per_cascade.
@@ -49,9 +49,7 @@ class CascadingEvaluator:
         if not is_valid:
             raise ValueError(f"Invalid vector: {error}")
 
-        from src.meta.parameterizers.algorithm_parameterizer import UnifiedAlgorithmParameterizer
-        from src.meta.core.matching_merger import merge_matchings
-        from src.state.store import StateStore
+        from src.meta.distributed.orchestrator import DistributedOrchestrator
 
         # Get parameters from vector
         max_cascades = int(vector.max_iterations)
@@ -65,7 +63,7 @@ class CascadingEvaluator:
         cascade_round = 0
         total_weight = 0.0  # Accumulate weight across ALL cascades
 
-        # Cascading rounds
+        # Cascading rounds with autonomous node execution
         for cascade_round in range(max_cascades):
             # If no unmatched nodes remain, stop cascading
             unmatched_nodes = set(graph.vertices()) - already_matched_nodes
@@ -73,33 +71,19 @@ class CascadingEvaluator:
                 break
 
             # Create filtered graph with only unmatched nodes
-            # This ensures algorithms only work on the shrinking graph
+            # This ensures DistributedOrchestrator only creates nodes for unmatched vertices
             cascade_graph = self._create_filtered_graph(graph, already_matched_nodes)
 
-            # Run all 3 algorithms and merge their results
-            # CRITICAL: Create fresh StateStore for EACH algorithm
-            # If we reuse one StateStore, Greedy's matches mark all nodes as matched,
-            # and then Itai/Luby see an empty graph and return the same Greedy matching!
-            parameterizers = [
-                UnifiedAlgorithmParameterizer("greedy"),
-                UnifiedAlgorithmParameterizer("itai"),
-                UnifiedAlgorithmParameterizer("luby"),
-            ]
+            # Run DistributedOrchestrator (autonomous nodes with message passing)
+            # Pass pre_matched_nodes so matched nodes are marked as finished
+            orchestrator = DistributedOrchestrator(max_workers=4)
+            matching, metrics = orchestrator.execute(
+                cascade_graph,
+                vector,
+                pre_matched_nodes=already_matched_nodes
+            )
 
-            matchings = []
-            for parameterizer in parameterizers:
-                try:
-                    # Fresh StateStore for each algorithm (crucial!)
-                    state_store = StateStore(cascade_graph)
-                    matching = parameterizer.execute(cascade_graph, vector, state_store=state_store)
-                    matchings.append(matching)
-                except Exception:
-                    matchings.append({})
-
-            # Merge matchings via conflict resolution
-            matching = merge_matchings(matchings, cascade_graph)
-
-            # Calculate weight for THIS CASCADE (all matches found on filtered graph)
+            # Calculate weight for THIS CASCADE (new matches found on filtered graph)
             curr_weight = 0.0
             if matching:
                 for u, v in matching.items():
@@ -128,6 +112,8 @@ class CascadingEvaluator:
         self.last_weights_per_cascade = weight_per_round
 
         # Return total accumulated matched weight across all cascades
+        # This represents the cumulative value of all matches found by autonomous nodes
+        # across multiple distributed execution passes on the shrinking graph
         return total_weight
 
     def _create_filtered_graph(

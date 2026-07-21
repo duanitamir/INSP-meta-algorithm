@@ -43,6 +43,7 @@ class DistributedOrchestrator:
         graph: GraphManager,
         canonical_vector: CanonicalVector,
         parameterizers: List = None,  # Nodes create their own parameterizers
+        pre_matched_nodes: set = None,  # Nodes already matched in previous cascades
     ) -> Tuple[Dict[int, int], Dict]:
         """Execute matching using autonomous distributed nodes (Phase 5 simplification).
 
@@ -53,6 +54,7 @@ class DistributedOrchestrator:
             graph: Shared read-only graph
             canonical_vector: Shared immutable parameter chromosome
             parameterizers: Ignored (nodes create their own)
+            pre_matched_nodes: Set of node IDs already matched in previous cascades (optional)
 
         Returns:
             Tuple of:
@@ -76,10 +78,16 @@ class DistributedOrchestrator:
 
         # Create one autonomous node per graph vertex
         nodes: Dict[int, DistributedNode] = {}
+        pre_matched_nodes = pre_matched_nodes or set()
 
         for node_id in graph.vertices():
             node = DistributedNode(node_id, graph)
             node.convergence_detector = convergence_detector
+
+            # For cascading: mark already-matched nodes as finished
+            if node_id in pre_matched_nodes:
+                node.finished = True
+
             nodes[node_id] = node
 
         max_iterations = int(canonical_vector.max_iterations)
