@@ -11,6 +11,8 @@ from src.meta.messages.edge_conflict_protocol import (
     EdgeProposalMessage,
     EdgeAcceptanceMessage,
 )
+from src.config import DistributedAlgorithmConfig
+from src.meta.messages.config_gossip_message import ConfigGossipMessage
 
 
 class DistributedNode:
@@ -28,15 +30,25 @@ class DistributedNode:
     - graph: Network topology (immutable)
     """
 
-    def __init__(self, node_id: int, shared_graph: GraphManager):
+    def __init__(
+        self,
+        node_id: int,
+        shared_graph: GraphManager,
+        algorithm_config: DistributedAlgorithmConfig | None = None
+    ):
         """Initialize a distributed node.
 
         Args:
             node_id: Unique node identifier
             shared_graph: Read-only reference to network topology
+            algorithm_config: Algorithm configuration (convergence, algorithm parameters).
+                             If None, creates default configuration.
         """
         self.id = node_id
         self.graph = shared_graph
+
+        # Algorithm configuration (spreads via gossip protocol)
+        self.algorithm_config = algorithm_config or DistributedAlgorithmConfig()
 
         # State (this node's algorithm state)
         self.state = NodeState(node_id)
@@ -232,7 +244,11 @@ class DistributedNode:
         )
 
     def _process_coordination_messages(self, messages: List[Message]) -> None:
-        """Learn about other nodes' convergence decisions from messages.
+        """Learn about other nodes' convergence decisions and configs from messages.
+
+        Processes:
+        - CONVERGENCE_VOTE: Other nodes' convergence decisions
+        - CONFIG_GOSSIP: Algorithm configuration from neighbors
 
         Args:
             messages: All messages received this round
@@ -242,6 +258,12 @@ class DistributedNode:
         convergence_msgs = []
 
         for msg in messages:
+            # Handle config gossip messages
+            if isinstance(msg, ConfigGossipMessage):
+                self.receive_config_gossip(msg)
+                continue
+
+            # Handle convergence votes
             if msg.payload.get("type") == "CONVERGENCE_VOTE":
                 sender_id = msg.sender
                 vote = msg.payload.get("vote", False)
@@ -692,3 +714,69 @@ class DistributedNode:
         self.last_matching_weight = 0.0
         self.edge_votes.clear()
         self.pending_proposals.clear()
+
+    # ============================================================================
+    # CONFIG GOSSIP PROTOCOL (Distributed Configuration Spreading)
+    # ============================================================================
+
+    def gossip_config(self) -> None:
+        """Send current algorithm configuration to random neighbors.
+
+        Nodes spread their algorithm configuration via gossip protocol.
+        Neighbors will accept if version is higher than their current.
+        """
+        neighbors = list(self.graph.neighbors(self.id))
+        if not neighbors:
+            return
+
+        # Create config message
+        msg = ConfigGossipMessage(
+            sender=self.id,
+            recipient=-1,  # Will be set per-neighbor
+            payload=self.algorithm_config.to_dict(),
+            version=self.algorithm_config.version,
+            round_num=self.round_number
+        )
+
+        # Sample up to 3 neighbors to avoid flooding
+        import random
+        sample_size = min(3, len(neighbors))
+        sampled_neighbors = random.sample(neighbors, sample_size)
+
+        # Send to sampled neighbors
+        for neighbor in sampled_neighbors:
+            neighbor_msg = ConfigGossipMessage(
+                sender=self.id,
+                recipient=neighbor,
+                payload=msg.payload.copy(),
+                version=msg.version,
+                round_num=self.round_number
+            )
+            self.outbox.send(neighbor_msg)
+
+    def receive_config_gossip(self, msg: ConfigGossipMessage) -> None:
+        """Receive and potentially adopt algorithm configuration from neighbor.
+
+        Only accepts configuration if version > current version (version-based ordering).
+
+        Args:
+            msg: ConfigGossipMessage with algorithm configuration
+        """
+        if self._should_accept_config(msg):
+            # Adopt this configuration
+            self.algorithm_config = DistributedAlgorithmConfig.from_dict(msg.payload)
+            # Ensure version is set correctly
+            self.algorithm_config.version = msg.version
+
+    def _should_accept_config(self, msg: ConfigGossipMessage) -> bool:
+        """Check if we should accept configuration from neighbor.
+
+        Version-based ordering: only accept if msg version > current version.
+
+        Args:
+            msg: ConfigGossipMessage to evaluate
+
+        Returns:
+            True if we should adopt this configuration, False otherwise
+        """
+        return msg.version > self.algorithm_config.version
