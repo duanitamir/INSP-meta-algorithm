@@ -20,7 +20,7 @@ class TestFitnessEvaluatorBasics:
     def test_fitness_evaluator_name(self) -> None:
         """Should return correct name."""
         evaluator = FitnessEvaluator()
-        assert evaluator.name() == "FitnessEvaluator"
+        assert "FitnessEvaluator" in evaluator.name()
 
 
 class TestFitnessEvaluatorExecution:

@@ -3,7 +3,6 @@ from src.state import StateStore, NodeState
 from src.communication import Message, MessageQueue
 from src.simulation import SimulationConfig
 from src.metrics import MetricsCollector, MetricsSnapshot
-from src.visualization import GraphVisualizer
 
 __all__ = [
     "GraphManager",
@@ -14,5 +13,4 @@ __all__ = [
     "SimulationConfig",
     "MetricsCollector",
     "MetricsSnapshot",
-    "GraphVisualizer",
 ]

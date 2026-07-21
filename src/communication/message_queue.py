@@ -69,6 +69,22 @@ class MessageQueue:
         """Total messages currently in all inboxes."""
         return sum(len(inbox) for inbox in self._inboxes.values())
 
+    def get_all_pending_messages(self) -> List[Message]:
+        """Get all pending messages in the queue (for outbox retrieval).
+
+        Returns all messages stored for all recipients without clearing them.
+        Used by orchestrator to retrieve outgoing messages before delivery.
+        """
+        all_messages = []
+        for inbox in self._inboxes.values():
+            all_messages.extend(inbox)
+        return all_messages
+
+    def clear_all_messages(self) -> None:
+        """Clear all messages from all inboxes."""
+        for inbox in self._inboxes.values():
+            inbox.clear()
+
     def reset(self) -> None:
         """Clear all messages."""
         self._inboxes.clear()

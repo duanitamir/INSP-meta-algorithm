@@ -76,6 +76,7 @@ class DistributedOrchestrator:
 
         # Create one autonomous node per graph vertex
         nodes: Dict[int, DistributedNode] = {}
+
         for node_id in graph.vertices():
             node = DistributedNode(node_id, graph)
             node.convergence_detector = convergence_detector
@@ -120,16 +121,21 @@ class DistributedOrchestrator:
         Args:
             nodes: Dict of node_id -> DistributedNode
         """
-        # Collect all outgoing messages from all nodes
+        # Collect all outgoing messages from all nodes' outboxes
         all_messages = []
         for node in nodes.values():
-            outgoing = node.outbox.get_messages(node.id)
+            # Get all pending messages from node's outbox
+            outgoing = node.outbox.get_all_pending_messages()
             all_messages.extend(outgoing)
 
         # Deliver to recipients
         for msg in all_messages:
             if msg.recipient in nodes:
                 nodes[msg.recipient].inbox.send(msg)
+
+        # Clear outboxes after delivery
+        for node in nodes.values():
+            node.outbox.clear_all_messages()
 
     def _collect_results(
         self, nodes: Dict[int, DistributedNode], graph: GraphManager

@@ -37,26 +37,33 @@ class MetaAlgorithmGA:
         early_stop_generations: int = 10,
         num_workers: int = 4,
         use_cascading: bool = True,
+        use_distributed: bool = False,
     ) -> None:
         """Initialize genetic algorithm.
 
         Args:
-            fitness_evaluator: FitnessEvaluator instance (if None, uses cascading by default)
+            fitness_evaluator: FitnessEvaluator instance (if None, creates one based on flags)
             population_size: Number of vectors in population
             generations: Number of generations to evolve
             mutation_rate: Base mutation probability per parameter [0, 1]
             elite_fraction: Fraction of population to keep as elite [0.1, 0.9]
             early_stop_generations: Stop if no improvement for N generations (default 10)
             num_workers: Number of parallel workers for evaluation
-            use_cascading: If True, use DistributedCascadingEvaluator; if False, use standard FitnessEvaluator
+            use_cascading: If True, use CascadingEvaluator; if False, use standard FitnessEvaluator
+            use_distributed: If True, use distributed orchestrator (autonomous nodes, message passing)
         """
         if fitness_evaluator is None:
-            # Use cascading by default for GA optimization
-            if use_cascading:
-                from src.meta.core.distributed_cascading_evaluator import DistributedCascadingEvaluator
-                self.fitness_evaluator = DistributedCascadingEvaluator()
+            # Create evaluator based on flags
+            if use_distributed:
+                # Distributed mode: autonomous nodes with message passing
+                self.fitness_evaluator = FitnessEvaluator(use_distributed=True, max_workers=num_workers)
+            elif use_cascading:
+                # Cascading mode: run algorithms repeatedly on shrinking graphs
+                from src.meta.core.distributed_cascading_evaluator import CascadingEvaluator
+                self.fitness_evaluator = CascadingEvaluator()
             else:
-                self.fitness_evaluator = FitnessEvaluator()
+                # Standard centralized mode
+                self.fitness_evaluator = FitnessEvaluator(use_distributed=False)
         else:
             self.fitness_evaluator = fitness_evaluator
         self.population_size = population_size

@@ -1,38 +1,39 @@
-"""Distributed cascading evaluator for GA fitness evaluation.
+"""Cascading fitness evaluator for GA optimization.
 
-Implements cascading rounds where algorithms run repeatedly on the same graph,
-with matched nodes becoming inactive between rounds. Each node only sees its
-unmatched neighbors, creating a logically shrinking graph.
+Implements cascading rounds on shrinking graphs using centralized approach.
+Each cascade runs 3 algorithms independently on progressively smaller graphs
+where matched nodes are removed between passes.
+
+Matched nodes become inactive between cascades, creating progressively smaller graphs.
+Multiple cascades accumulate matches from each pass on the shrinking graph.
 """
 
 from src.graph.graph_manager import GraphManager
 from src.meta.core.canonical_vector import CanonicalVector
-from src.meta.core.matching_merger import merge_matchings
 
 
-class DistributedCascadingEvaluator:
-    """Evaluates fitness using distributed cascading rounds.
+class CascadingEvaluator:
+    """Evaluates fitness using centralized cascading rounds on shrinking graphs.
 
     For each cascade round:
-    1. Run Greedy, Itai, Luby independently (each node sees neighbors only)
-    2. Merge results via conflict resolution
-    3. Update node states (matched nodes become inactive)
-    4. Check convergence (improvement < threshold)
-    5. Continue if improvement sufficient, else stop
+    1. Create filtered graph with only unmatched nodes
+    2. Run all 3 algorithms independently (fresh StateStore each)
+    3. Merge matchings via conflict resolution
+    4. Mark matched nodes as inactive for next cascade
+    5. Check convergence (improvement < threshold)
+    6. Continue if improvement sufficient, else stop
 
-    This simulates the distributed execution where each cascade round
-    operates on a logically smaller graph as matched edges are removed.
+    Each algorithm gets independent access to nodes in the current cascade,
+    producing different matchings that merge together for better results.
     """
 
     def __init__(self) -> None:
         """Initialize cascading evaluator."""
-        # Store cascade details for analysis (optional)
         self.last_num_cascades = 0
         self.last_weights_per_cascade = []
-        self._accumulated_weight = 0.0  # Track accumulated weight across evals for debugging
 
     def evaluate(self, graph: GraphManager, vector: CanonicalVector) -> float:
-        """Evaluate fitness using cascading rounds with persistent state.
+        """Evaluate fitness using cascading rounds on shrinking graphs.
 
         Compatible with FitnessEvaluator interface - returns just the fitness weight.
         Cascading details stored in self.last_num_cascades and self.last_weights_per_cascade.
@@ -48,99 +49,60 @@ class DistributedCascadingEvaluator:
         if not is_valid:
             raise ValueError(f"Invalid vector: {error}")
 
-        # Import here to avoid circular imports
         from src.meta.parameterizers.algorithm_parameterizer import UnifiedAlgorithmParameterizer
+        from src.meta.core.matching_merger import merge_matchings
         from src.state.store import StateStore
-        from src.meta.core.cascade_cache_builder import CascadeCacheBuilder
 
         # Get parameters from vector
         max_cascades = int(vector.max_iterations)
         convergence_threshold = vector.convergence_threshold
 
-        # Create single StateStore for all cascades (KEY FIX: persistent across cascades)
-        state_store = StateStore(graph)
-
-        # Pass thread pool executor to all cascades (3D optimization: algorithm-level pooling)
-        # Instead of creating/destroying per cascade, create once and reuse across all cascades
-        # This reduces overhead from ~5 executor creations per evaluation to 0
-        executor = None
+        # Initialize matched nodes tracking
+        already_matched_nodes = set()
 
         prev_weight = 0.0
         weight_per_round = []
         cascade_round = 0
         total_weight = 0.0  # Accumulate weight across ALL cascades
 
-        # Cascading rounds with persistent StateStore
+        # Cascading rounds
         for cascade_round in range(max_cascades):
-            # CRITICAL: Snapshot matched nodes BEFORE building cache and running algorithms
-            # This captures what was matched in PREVIOUS cascades, not what the current
-            # algorithm execution will match. The algorithms themselves update the state_store,
-            # so we need to capture the "before" state to distinguish old vs new matches.
-            already_matched_nodes = set()
-            for node_id in graph.vertices():
-                if state_store.get_node_state(node_id).is_matched():
-                    already_matched_nodes.add(node_id)
+            # If no unmatched nodes remain, stop cascading
+            unmatched_nodes = set(graph.vertices()) - already_matched_nodes
+            if not unmatched_nodes:
+                break
 
-            # Build distributed cascade cache for this cascade (skip on CASCADE 0 for consistency)
-            # Contains only local knowledge: my_degree, my_neighbors, my_edge_weights,
-            # neighbor_degrees, neighbor_state, messages
-            # CASCADE 0: use None so CASCADE 0 behaves identically to standard evaluator
-            # CASCADE 1+: use cache for performance (only unmatched nodes in shrinking graph)
-            cascade_cache = None
-            if cascade_round > 0:
-                cascade_cache = CascadeCacheBuilder.build_cascade_cache(
-                    graph, state_store, cascade_round
-                )
+            # Create filtered graph with only unmatched nodes
+            # This ensures algorithms only work on the shrinking graph
+            cascade_graph = self._create_filtered_graph(graph, already_matched_nodes)
 
-            # Create fresh parameterizers for this cascade round
+            # Run all 3 algorithms and merge their results
+            # CRITICAL: Create fresh StateStore for EACH algorithm
+            # If we reuse one StateStore, Greedy's matches mark all nodes as matched,
+            # and then Itai/Luby see an empty graph and return the same Greedy matching!
             parameterizers = [
                 UnifiedAlgorithmParameterizer("greedy"),
                 UnifiedAlgorithmParameterizer("itai"),
                 UnifiedAlgorithmParameterizer("luby"),
             ]
 
-            # Run all 3 parameterizers with FRESH state_store for each algorithm (CASCADE 0)
-            # This ensures each algorithm runs on the same clean graph state, not polluted by previous algorithms' matches
-            # CASCADE 1+: Share state_store to preserve matched nodes across cascades
             matchings = []
-            for i, parameterizer in enumerate(parameterizers):
+            for parameterizer in parameterizers:
                 try:
-                    # CASCADE 0: Use None state_store (fresh for each algorithm, like standard evaluator)
-                    # CASCADE 1+: Use shared state_store (preserve matched nodes from previous cascades)
-                    exec_state_store = None if cascade_round == 0 else state_store
-
-                    # KEY: Pass cascade_cache (if cascade > 0) and executor for reuse
-                    matching = parameterizer.execute(
-                        graph,
-                        vector,
-                        state_store=exec_state_store,
-                        cascade_cache=cascade_cache,
-                        executor=executor,
-                    )
+                    # Fresh StateStore for each algorithm (crucial!)
+                    state_store = StateStore(cascade_graph)
+                    matching = parameterizer.execute(cascade_graph, vector, state_store=state_store)
                     matchings.append(matching)
-                    # Capture executor on first run (created inside parameterizer if None)
-                    if executor is None:
-                        executor = parameterizer._executor
                 except Exception:
                     matchings.append({})
 
-            # Filter each matching: remove any edge where one endpoint is already matched
-            filtered_matchings = []
-            for matching in matchings:
-                filtered = {}
-                for u, v in matching.items():
-                    # Only keep if BOTH nodes are unmatched
-                    if u not in already_matched_nodes and v not in already_matched_nodes:
-                        filtered[u] = v
-                filtered_matchings.append(filtered)
-
             # Merge matchings via conflict resolution
-            final_matching = merge_matchings(filtered_matchings, graph)
+            matching = merge_matchings(matchings, cascade_graph)
 
-            # Calculate weight for THIS CASCADE ONLY (new matches in this round)
+            # Calculate weight for THIS CASCADE (all matches found on filtered graph)
             curr_weight = 0.0
-            if final_matching:
-                for u, v in final_matching.items():
+            if matching:
+                for u, v in matching.items():
                     if u < v:  # Count each edge once
                         curr_weight += graph.get_edge_weight(u, v)
 
@@ -154,62 +116,47 @@ class DistributedCascadingEvaluator:
                     # Convergence reached, stop cascading
                     break
 
-            # KEY FIX: Update state_store with matched nodes for next cascade
-            # This ensures matched nodes become inactive (not seen as neighbors) in next cascade
-            matched_pairs = set()
-            for u, v in final_matching.items():
-                if u < v:  # Track each pair once
-                    matched_pairs.add((u, v))
-                # Update matched_to in node's own state
-                u_state = state_store.get_node_state(u)
-                u_state.set_matched_to(v)
-                state_store.update_node_state(u, u_state)
-
-                v_state = state_store.get_node_state(v)
-                v_state.set_matched_to(u)
-                state_store.update_node_state(v, v_state)
-
-            # Update neighbors dicts: tell all neighbors that u and v are now matched
-            for u, v in matched_pairs:
-                u_neighbors = graph.neighbors(u)
-                v_neighbors = graph.neighbors(v)
-
-                # U knows it's matched to V
-                u_state = state_store.get_node_state(u)
-                u_state.update_neighbor_status(v, matched=True, matched_to=u)
-                state_store.update_node_state(u, u_state)
-
-                # V knows it's matched to U
-                v_state = state_store.get_node_state(v)
-                v_state.update_neighbor_status(u, matched=True, matched_to=v)
-                state_store.update_node_state(v, v_state)
-
-                # Tell u's neighbors that u is matched to v
-                for neighbor_u in u_neighbors:
-                    neighbor_state = state_store.get_node_state(neighbor_u)
-                    neighbor_state.update_neighbor_status(u, matched=True, matched_to=v)
-                    state_store.update_node_state(neighbor_u, neighbor_state)
-
-                # Tell v's neighbors that v is matched to u
-                for neighbor_v in v_neighbors:
-                    neighbor_state = state_store.get_node_state(neighbor_v)
-                    neighbor_state.update_neighbor_status(v, matched=True, matched_to=u)
-                    state_store.update_node_state(neighbor_v, neighbor_state)
+            # Update matched nodes for next cascade
+            for u, v in matching.items():
+                already_matched_nodes.add(u)
+                already_matched_nodes.add(v)
 
             prev_weight = curr_weight
-
-        # Clean up executor (3D optimization: reused across all cascades)
-        if executor is not None:
-            executor.shutdown(wait=True)
 
         # Store details for analysis
         self.last_num_cascades = cascade_round + 1
         self.last_weights_per_cascade = weight_per_round
 
         # Return total accumulated matched weight across all cascades
-        # This represents the total value of all matches found (each cascade finds NEW edges
-        # in the shrinking graph after previous cascade removed matched nodes)
         return total_weight
+
+    def _create_filtered_graph(
+        self, graph: GraphManager, already_matched_nodes: set
+    ) -> GraphManager:
+        """Create a filtered graph containing only unmatched nodes.
+
+        Args:
+            graph: Original full graph
+            already_matched_nodes: Set of node IDs already matched in previous cascades
+
+        Returns:
+            New GraphManager containing only unmatched nodes and their edges
+        """
+        filtered_graph = GraphManager.create_empty_graph()
+
+        # Add only unmatched nodes
+        for node_id in graph.vertices():
+            if node_id not in already_matched_nodes:
+                filtered_graph.add_vertex(node_id)
+
+        # Add edges between unmatched nodes only
+        for u in filtered_graph.vertices():
+            for v in graph.neighbors(u):
+                if v not in already_matched_nodes and u < v:  # Avoid duplicate edges
+                    weight = graph.get_edge_weight(u, v)
+                    filtered_graph.add_edge(u, v, weight)
+
+        return filtered_graph
 
     def name(self) -> str:
         """Return evaluator name."""

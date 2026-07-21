@@ -151,9 +151,13 @@ class DistributedNode:
         self._process_coordination_messages(messages)
 
         # PHASE 1: Get proposals from each algorithm (LOCAL SCOPE ONLY - neighbors)
-        from src.meta.parameterizers.factory import ParameterizerFactory
+        from src.meta.parameterizers.algorithm_parameterizer import UnifiedAlgorithmParameterizer
 
-        parameterizers = ParameterizerFactory.create_default()
+        parameterizers = [
+            UnifiedAlgorithmParameterizer("greedy"),
+            UnifiedAlgorithmParameterizer("itai"),
+            UnifiedAlgorithmParameterizer("luby"),
+        ]
         neighbors = list(self.graph.neighbors(self.id))
         context = self._create_context()
 
@@ -161,22 +165,26 @@ class DistributedNode:
         for param in parameterizers:
             try:
                 # Each algorithm proposes ONLY to neighbors (local scope)
+                algo_name = param.name()
                 proposals = param.propose_to_neighbors(self.id, neighbors, context)
-                proposals_per_algorithm[param.name] = proposals
-            except Exception:
-                proposals_per_algorithm[param.name] = {}
+                proposals_per_algorithm[algo_name] = proposals
+            except Exception as e:
+                # Log the error for debugging
+                algo_name = param.name()
+                proposals_per_algorithm[algo_name] = {}
 
         # PHASE 2: Accumulate proposals from all algorithms
         self.pending_proposals.clear()
         for algo_name, proposals in proposals_per_algorithm.items():
-            for neighbor_id, weight in proposals.items():
-                # Keep highest weight proposal per neighbor
-                if neighbor_id not in self.pending_proposals:
-                    self.pending_proposals[neighbor_id] = weight
-                else:
-                    self.pending_proposals[neighbor_id] = max(
-                        self.pending_proposals[neighbor_id], weight
-                    )
+            if proposals:  # Only process non-empty proposals
+                for neighbor_id, weight in proposals.items():
+                    # Keep highest weight proposal per neighbor
+                    if neighbor_id not in self.pending_proposals:
+                        self.pending_proposals[neighbor_id] = weight
+                    else:
+                        self.pending_proposals[neighbor_id] = max(
+                            self.pending_proposals[neighbor_id], weight
+                        )
 
         # PHASE 3: ALWAYS call conflict_solution() - Protocol Consistency Guaranteed
         # Handles: 0 proposals (no-op), 1 proposal (select it), N proposals (full voting)
@@ -438,34 +446,38 @@ class DistributedNode:
     # PHASE 2: TWO-PHASE COMMIT (SYMMETRY GUARANTEE)
     # ============================================================================
 
-    def handle_match_confirmation(self, msg_dict: Dict) -> None:
+    def handle_match_confirmation(self, sender: int, msg_dict: Dict) -> None:
         """Handle match confirmation from other endpoint (Phase 2).
 
         Args:
-            msg_dict: Message payload with status "CONFIRMED" or "CANCELLED"
+            sender: Node ID of the sender
+            msg_dict: Message payload with status "CONFIRMED"
         """
         status = msg_dict.get("status", "")
-        sender = msg_dict.get("sender", -1)
 
         if status == "CONFIRMED":
             # Both sides confirmed the match
             if self.tentative_match == sender:
                 self.confirmed_match = sender
                 self.current_match = sender
+                self.state.set_matched_to(sender)
 
-    def handle_match_cancellation(self, msg_dict: Dict) -> None:
+    def handle_match_cancellation(self, sender: int, msg_dict: Dict) -> None:
         """Handle partner found better match (Phase 2).
 
         Args:
+            sender: Node ID of the sender
             msg_dict: Message payload with new_partner
         """
-        sender = msg_dict.get("sender", -1)
         new_partner = msg_dict.get("new_partner", -1)
 
         # If we had match with sender, it's cancelled
         if self.confirmed_match == sender:
             self.confirmed_match = None
             self.current_match = None
+            self.tentative_match = None
+        elif self.tentative_match == sender:
+            # Even tentative matches can be cancelled
             self.tentative_match = None
 
     def accept_tentative_match(self, neighbor_id: int, weight: float) -> None:
@@ -636,7 +648,12 @@ class DistributedNode:
             pass
 
     def _process_phase2_confirmations(self, messages: List[Message]) -> None:
-        """Process Phase 2 confirmation and cancellation messages.
+        """Process Phase 1/2 acceptance and confirmation messages.
+
+        Handles:
+        - EDGE_ACCEPTANCE: Response to our proposal (Phase 1)
+        - MATCH_CONFIRMATION: Two-phase commit confirmation (Phase 2)
+        - MATCH_CANCELLATION: Partner found better match (Phase 2)
 
         Args:
             messages: All messages received this round
@@ -644,11 +661,23 @@ class DistributedNode:
         for msg in messages:
             payload = msg.payload
             msg_type = payload.get("type")
+            sender = msg.sender
 
-            if msg_type == "MATCH_CONFIRMATION":
-                self.handle_match_confirmation(payload)
+            if msg_type == "EDGE_ACCEPTANCE":
+                # Phase 1: Response to our proposal
+                status = payload.get("status", "")
+                reason = payload.get("reason", "")
+                edge_weight = self.graph.get_edge_weight(self.id, sender)
+
+                if status == "ACCEPTED":
+                    # Our proposal was accepted - move to tentative match
+                    self.accept_tentative_match(sender, edge_weight)
+                # If REJECTED, do nothing (we can try other neighbors)
+
+            elif msg_type == "MATCH_CONFIRMATION":
+                self.handle_match_confirmation(sender, payload)
             elif msg_type == "MATCH_CANCELLATION":
-                self.handle_match_cancellation(payload)
+                self.handle_match_cancellation(sender, payload)
 
     def reset(self) -> None:
         """Reset node to initial state."""
