@@ -17,6 +17,7 @@ from src.meta.core.canonical_vector import CanonicalVector
 from src.simulation.distributed_node import DistributedNode
 from src.simulation.parallel_node_executor import ParallelNodeExecutor
 from src.meta.distributed.convergence_detector import DistributedConvergenceDetector
+from src.config import ExperimentConfig, DistributedAlgorithmConfig
 
 
 class DistributedOrchestrator:
@@ -76,12 +77,15 @@ class DistributedOrchestrator:
         )
         convergence_detector.initialize(graph.vertices())
 
-        # Create one autonomous node per graph vertex
+        # Create algorithm config from canonical vector (distributed to all nodes)
+        algorithm_config = DistributedAlgorithmConfig.from_canonical_vector(canonical_vector)
+
+        # Create one autonomous node per graph vertex with shared algorithm config
         nodes: Dict[int, DistributedNode] = {}
         pre_matched_nodes = pre_matched_nodes or set()
 
         for node_id in graph.vertices():
-            node = DistributedNode(node_id, graph)
+            node = DistributedNode(node_id, graph, algorithm_config=algorithm_config)
             node.convergence_detector = convergence_detector
 
             # For cascading: mark already-matched nodes as finished
@@ -93,13 +97,18 @@ class DistributedOrchestrator:
         max_iterations = int(canonical_vector.max_iterations)
         iteration = 0
 
-        # PHASE 6: Parallel node execution + pure round scheduler loop
+        # Parallel node xecution + pure round scheduler loop
         # All decision logic is in DistributedNode
         while iteration < max_iterations:
-            # PHASE 6: Execute all nodes in parallel
+            # Execute all nodes in parallel
             all_continue = self.executor.execute_all_nodes(nodes, canonical_vector)
 
-            # Deliver messages between nodes
+            # Config gossip (spread algorithm config to neighbors every 5 rounds)
+            if iteration % 5 == 0:
+                for node in nodes.values():
+                    node.gossip_config()
+
+            # Deliver messages between nodes (includes config gossip messages)
             self._deliver_all_messages(nodes)
 
             # Check termination: quorum voting or all nodes inactive

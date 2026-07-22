@@ -19,6 +19,7 @@ from src.simulation.algorithm_context import AlgorithmContext
 from src.algorithms.implementations.greedy_matching import GreedyMatching
 from src.algorithms.implementations.itai_israeli import ItaiIsraeliMaximalMatching
 from src.algorithms.implementations.luby_randomized import LubyRandomizedMatching
+from src.config import ExperimentConfig
 
 
 class CentralizedOrchestrator:
@@ -32,15 +33,18 @@ class CentralizedOrchestrator:
         """Initialize orchestrator."""
         self.graph = None
         self.state_store = None
+        self.experiment_config = None
 
-    def setup(self, graph: GraphManager) -> None:
+    def setup(self, graph: GraphManager, config: ExperimentConfig | None = None) -> None:
         """Setup orchestrator with graph and state.
 
         Args:
             graph: Shared graph (centralized, read-only)
+            config: Experiment configuration (optional, uses defaults if None)
         """
         self.graph = graph
         self.state_store = StateStore(graph)
+        self.experiment_config = config or ExperimentConfig()
 
     def run_until_convergence(self, max_rounds: int = 100, vector: CanonicalVector | None = None) -> Dict[int, int]:
         """Run three algorithms with centralized state, merge results.
