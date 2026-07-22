@@ -35,33 +35,18 @@ class AlgorithmRegistry:
         self._load_from_parameterizers()
 
     def _load_from_parameterizers(self) -> None:
-        """Load algorithm definitions from algorithm classes.
+        """Load algorithm definitions from AlgorithmRegistryBuilder.
 
-        Each algorithm class declares its parameters in PARAMETER_DEFINITION.
-        This method reads from those classes to keep algorithms self-contained.
+        Algorithms self-register when their modules are imported via the
+        centralized register_all module. This ensures all algorithms are
+        registered and available in the registry.
         """
-        definitions = {}
+        # Import centralized registration module (triggers all algorithm registrations)
+        import src.algorithms.implementations.register_all  # noqa
 
-        try:
-            from src.algorithms.implementations.greedy_matching import GreedyMatching
-            from src.algorithms.implementations.itai_israeli import ItaiIsraeliMaximalMatching
-            from src.algorithms.implementations.luby_randomized import LubyRandomizedMatching
-
-            # Auto-discover parameter definitions from algorithm classes
-            algorithms_to_load = [
-                GreedyMatching,
-                ItaiIsraeliMaximalMatching,
-                LubyRandomizedMatching,
-            ]
-
-            for algo_class in algorithms_to_load:
-                if hasattr(algo_class, "PARAMETER_DEFINITION"):
-                    param_def = algo_class.PARAMETER_DEFINITION
-                    algo_name = param_def.get("name")
-                    if algo_name:
-                        definitions[algo_name] = param_def
-        except (ImportError, AttributeError):
-            pass
+        # Read what was registered (algorithms registered themselves on import)
+        from src.meta.core.algorithm_registry_builder import AlgorithmRegistryBuilder
+        definitions = AlgorithmRegistryBuilder.get_all_definitions()
 
         with self._registry_lock:
             self._algorithms = definitions
@@ -162,6 +147,80 @@ class AlgorithmRegistry:
         """
         self.reset()
         self._load_from_parameterizers()
+
+    def all_parameter_definitions(self) -> Dict[str, tuple]:
+        """Collect all parameter definitions from all algorithms.
+
+        Returns a dict mapping parameter_name -> (min, max, random_gen_fn).
+        Algorithm-specific parameter names are prefixed with algorithm name to avoid collisions.
+        This is used by CanonicalVector to discover all available parameters.
+
+        Returns:
+            Dict mapping parameter names to their (min, max, random_gen) tuples.
+        """
+        all_params = {}
+
+        with self._registry_lock:
+            for algo_name, algo_def in self._algorithms.items():
+                if "parameters" in algo_def:
+                    params = algo_def["parameters"]
+                    for param_name, param_spec in params.items():
+                        # Prefix algorithm-specific parameters (except max_rounds which is generic)
+                        if param_name != "max_iterations" and param_name != "convergence_threshold":
+                            final_name = f"{algo_name}_{param_name}"
+                        else:
+                            final_name = param_name
+
+                        all_params[final_name] = param_spec
+
+        return all_params
+
+    def get_algorithm_parameters(self, algorithm_name: str) -> Dict[str, tuple]:
+        """Get parameter definitions for a specific algorithm (with algorithm prefix).
+
+        Parameters are returned with algorithm name prefix for consistency with
+        all_parameter_definitions().
+
+        Args:
+            algorithm_name: Algorithm name (e.g., "greedy", "itai", "luby")
+
+        Returns:
+            Dict mapping (algorithm-prefixed) parameter names to (min, max, random_gen) tuples,
+            or empty dict if algorithm not found.
+        """
+        algo_def = self.get(algorithm_name)
+        if not algo_def or "parameters" not in algo_def:
+            return {}
+
+        params = {}
+        for param_name, param_spec in algo_def["parameters"].items():
+            # Use same prefixing logic as all_parameter_definitions()
+            if param_name not in ["max_iterations", "convergence_threshold"]:
+                final_name = f"{algorithm_name}_{param_name}"
+            else:
+                final_name = param_name
+            params[final_name] = param_spec
+
+        return params
+
+    def get_algorithm_parameters_unprefixed(self, algorithm_name: str) -> Dict[str, tuple]:
+        """Get parameter definitions for a specific algorithm (without algorithm prefix).
+
+        Parameters are returned without algorithm name prefix, useful for algorithm
+        classes that want their own parameters.
+
+        Args:
+            algorithm_name: Algorithm name (e.g., "greedy", "itai", "luby")
+
+        Returns:
+            Dict mapping parameter names (unprefixed) to (min, max, random_gen) tuples,
+            or empty dict if algorithm not found.
+        """
+        algo_def = self.get(algorithm_name)
+        if not algo_def or "parameters" not in algo_def:
+            return {}
+
+        return algo_def["parameters"].copy()
 
     @classmethod
     def instance(cls) -> "AlgorithmRegistry":

@@ -1,12 +1,11 @@
 """Fitness evaluator for scoring CanonicalVectors in genetic algorithm.
 
-Supports both centralized and distributed execution modes.
+Uses distributed orchestrator for all execution: each algorithm runs independently
+on autonomous nodes, then results are merged for best quality.
 """
 
 from src.graph.graph_manager import GraphManager
 from src.meta.core.canonical_vector import CanonicalVector
-from src.meta.core.matching_merger import merge_matchings
-from src.simulation.centralized_orchestrator import CentralizedOrchestrator
 
 
 class FitnessEvaluator:
@@ -18,16 +17,13 @@ class FitnessEvaluator:
     - Distributed mode: Fully autonomous nodes with message passing, convergence voting, etc.
     """
 
-    def __init__(self, use_distributed: bool = False, max_workers: int = 4) -> None:
+    def __init__(self, max_workers: int = 4) -> None:
         """Initialize fitness evaluator.
 
         Args:
-            use_distributed: If True, use distributed orchestrator; if False, use centralized
-            max_workers: Number of worker threads for distributed execution (ignored if centralized)
+            max_workers: Number of worker threads for parallel execution
         """
-        self.use_distributed = use_distributed
         self.max_workers = max_workers
-        self.centralized_orchestrator = CentralizedOrchestrator()
 
     def evaluate(self, graph: GraphManager, vector: CanonicalVector) -> float:
         """Evaluate fitness of a vector on given graph.
@@ -46,13 +42,13 @@ class FitnessEvaluator:
         if not is_valid:
             raise ValueError(f"Invalid vector: {error}")
 
-        if self.use_distributed:
-            return self._evaluate_distributed(graph, vector)
-        else:
-            return self._evaluate_centralized(graph, vector)
+        return self._evaluate_centralized(graph, vector)
 
     def _evaluate_centralized(self, graph: GraphManager, vector: CanonicalVector) -> float:
-        """Evaluate using centralized orchestrator (3 algorithms via parameterizers).
+        """Evaluate using distributed orchestrator (fully distributed execution).
+
+        Uses DistributedOrchestrator with all algorithms running autonomously on nodes.
+        This maintains fully distributed architecture while achieving quality matching.
 
         Args:
             graph: GraphManager instance
@@ -61,31 +57,21 @@ class FitnessEvaluator:
         Returns:
             float: Fitness score (matching weight)
         """
-        from src.meta.parameterizers.algorithm_parameterizer import UnifiedAlgorithmParameterizer
+        from src.meta.distributed.orchestrator import DistributedOrchestrator
 
-        # Create parameterizers
-        parameterizers = [
-            UnifiedAlgorithmParameterizer("greedy"),
-            UnifiedAlgorithmParameterizer("itai"),
-            UnifiedAlgorithmParameterizer("luby"),
-        ]
+        # Run distributed orchestrator with all algorithms (standard mode)
+        orchestrator = DistributedOrchestrator(
+            max_workers=self.max_workers,
+            use_convergence_detection=False,
+            min_iterations=10
+        )
 
-        # Run all 3 parameterizers to get their matchings
-        matchings = []
-        for parameterizer in parameterizers:
-            try:
-                matching = parameterizer.execute(graph, vector)
-                matchings.append(matching)
-            except Exception:
-                matchings.append({})
-
-        # Merge matchings via conflict resolution (keep highest-weight edges)
-        final_matching = merge_matchings(matchings, graph)
+        matching, _ = orchestrator.execute(graph, vector)
 
         # Calculate weight as fitness score
-        if final_matching:
+        if matching:
             weight = 0.0
-            for u, v in final_matching.items():
+            for u, v in matching.items():
                 if u < v:  # Count each edge once
                     weight += graph.get_edge_weight(u, v)
             return weight
@@ -104,7 +90,12 @@ class FitnessEvaluator:
         """
         from src.meta.distributed.orchestrator import DistributedOrchestrator
 
-        orchestrator = DistributedOrchestrator(max_workers=self.max_workers)
+        # Disable convergence detection for GA (too aggressive threshold)
+        # Convergence detector is useful for real distributed systems but breaks GA optimization
+        orchestrator = DistributedOrchestrator(
+            max_workers=self.max_workers,
+            use_convergence_detection=False
+        )
         matching, metrics = orchestrator.execute(graph, vector)
 
         # Calculate weight as fitness score
@@ -119,5 +110,4 @@ class FitnessEvaluator:
 
     def name(self) -> str:
         """Return evaluator name."""
-        mode = "Distributed" if self.use_distributed else "Centralized"
-        return f"FitnessEvaluator({mode})"
+        return "FitnessEvaluator"

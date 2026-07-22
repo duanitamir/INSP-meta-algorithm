@@ -49,15 +49,55 @@ from src.utils.types import RoundNumber, Edge, MatchedEdge
 class GreedyMatching(MatchingAlgorithm):
     """Simplified Greedy Distributed Matching with Mutual Bidding."""
 
-    # Self-contained parameter definition
-    PARAMETER_DEFINITION = {
-        "name": "greedy",
-        "parameters": {
-            "max_rounds": (5, 100, lambda: __import__("random").randint(5, 100)),
-        },
+    # Unified parameter definition: {param_name -> {min, max, default, type, description}}
+    PARAMETERS = {
+        "max_rounds": {
+            "min": 5,
+            "max": 100,
+            "default": 100,
+            "type": "integer",
+            "description": "Maximum execution rounds for greedy matching",
+        }
     }
 
-    def __init__(self):
+    # PARAMETER_DEFINITION for registry compatibility (auto-generated from PARAMETERS)
+    PARAMETER_DEFINITION = {
+        "name": "greedy",
+        "display_name": "Greedy Matching",
+        "parameters": {
+            param: (p["min"], p["max"], (lambda pm=param, pp=p: __import__("random").randint(pp["min"], pp["max"]) if pp["type"] == "integer" else __import__("random").uniform(pp["min"], pp["max"])))
+            for param, p in PARAMETERS.items()
+        }
+    }
+
+    # PARAMETER_DEFAULTS for initialization (auto-generated from PARAMETERS)
+    PARAMETER_DEFAULTS = {param: p["default"] for param, p in PARAMETERS.items()}
+
+    # PARAMETER_SCHEMA for validation (auto-generated from PARAMETERS)
+    PARAMETER_SCHEMA = {
+        "type": "object",
+        "properties": {
+            param: {
+                "type": p["type"],
+                "minimum": p["min"],
+                "maximum": p["max"],
+                "description": p["description"],
+            }
+            for param, p in PARAMETERS.items()
+        },
+        "required": list(PARAMETERS.keys()),
+    }
+
+    def __init__(self, parameters: Dict = None):
+        """Initialize Greedy Matching algorithm.
+
+        Args:
+            parameters: Optional parameter dict. Missing parameters use defaults from PARAMETER_DEFAULTS.
+        """
+        # Merge provided parameters with defaults
+        self.parameters = {**self.PARAMETER_DEFAULTS}
+        if parameters:
+            self.parameters.update(parameters)
 
         self._metadata = AlgorithmMetadata(
             name="Simplified Greedy Distributed Matching",
@@ -70,7 +110,7 @@ class GreedyMatching(MatchingAlgorithm):
                 "produces_maximum": False,
                 "deterministic": True,
                 "message_complexity": "O(m)",
-                "max_rounds": 100,
+                "max_rounds": self.parameters.get("max_rounds", 100),
             },
         )
 

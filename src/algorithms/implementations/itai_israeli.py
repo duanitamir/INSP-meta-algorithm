@@ -43,17 +43,64 @@ from src.utils.types import RoundNumber
 class ItaiIsraeliMaximalMatching(MatchingAlgorithm):
     """Itai-Israeli Distributed Maximal Matching Algorithm."""
 
-    # Self-contained parameter definition
-    PARAMETER_DEFINITION = {
-        "name": "itai",
-        "parameters": {
-            "timeout_rounds": (1, 20, lambda: __import__("random").randint(1, 20)),
-            "max_rounds": (5, 100, lambda: __import__("random").randint(5, 100)),
+    # Unified parameter definition: {param_name -> {min, max, default, type, description}}
+    PARAMETERS = {
+        "timeout_rounds": {
+            "min": 1,
+            "max": 20,
+            "default": 5,
+            "type": "integer",
+            "description": "Maximum rounds to wait before resetting negotiation",
         },
+        "max_rounds": {
+            "min": 5,
+            "max": 100,
+            "default": 100,
+            "type": "integer",
+            "description": "Maximum execution rounds",
+        }
     }
 
-    def __init__(self, timeout_rounds: int = 5):
-        self.timeout_rounds = timeout_rounds
+    # PARAMETER_DEFINITION for registry compatibility (auto-generated from PARAMETERS)
+    PARAMETER_DEFINITION = {
+        "name": "itai",
+        "display_name": "Itai-Israeli Maximal Matching",
+        "parameters": {
+            param: (p["min"], p["max"], (lambda pm=param, pp=p: __import__("random").randint(pp["min"], pp["max"]) if pp["type"] == "integer" else __import__("random").uniform(pp["min"], pp["max"])))
+            for param, p in PARAMETERS.items()
+        }
+    }
+
+    # PARAMETER_DEFAULTS for initialization (auto-generated from PARAMETERS)
+    PARAMETER_DEFAULTS = {param: p["default"] for param, p in PARAMETERS.items()}
+
+    # PARAMETER_SCHEMA for validation (auto-generated from PARAMETERS)
+    PARAMETER_SCHEMA = {
+        "type": "object",
+        "properties": {
+            param: {
+                "type": p["type"],
+                "minimum": p["min"],
+                "maximum": p["max"],
+                "description": p["description"],
+            }
+            for param, p in PARAMETERS.items()
+        },
+        "required": list(PARAMETERS.keys()),
+    }
+
+    def __init__(self, parameters: Dict = None):
+        """Initialize Itai-Israeli Matching algorithm.
+
+        Args:
+            parameters: Optional parameter dict. Missing parameters use defaults from PARAMETER_DEFAULTS.
+        """
+        # Merge provided parameters with defaults
+        self.parameters = {**self.PARAMETER_DEFAULTS}
+        if parameters:
+            self.parameters.update(parameters)
+
+        self.timeout_rounds = self.parameters.get("timeout_rounds", 5)
 
         self._metadata = AlgorithmMetadata(
             name="Itai-Israeli Distributed Maximal Matching",
@@ -65,8 +112,8 @@ class ItaiIsraeliMaximalMatching(MatchingAlgorithm):
                 "produces_maximal": True,
                 "produces_maximum": False,
                 "deterministic": True,
-                "max_rounds": 30,  # Aggressive limit to prevent infinite loops from timeout resets
-                "timeout_rounds": timeout_rounds,
+                "max_rounds": self.parameters.get("max_rounds", 100),
+                "timeout_rounds": self.timeout_rounds,
             },
         )
 

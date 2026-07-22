@@ -13,7 +13,7 @@ on complex graphs due to timing in the synchronous model. This is expected behav
 for this simplified randomized algorithm.
 """
 
-from typing import List, Tuple, Callable, Dict
+from typing import List, Tuple, Dict
 import random
 from src.algorithms.base import MatchingAlgorithm, AlgorithmMetadata
 from src.state.store import StateStore
@@ -24,32 +24,112 @@ from src.utils.types import RoundNumber
 class LubyRandomizedMatching(MatchingAlgorithm):
     """Luby-style Randomized Distributed Maximal Matching Algorithm."""
 
-    # Self-contained parameter definition
-    PARAMETER_DEFINITION = {
-        "name": "luby",
-        "parameters": {
-            "base_probability": (0.0, 1.0, lambda: random.uniform(0.0, 1.0)),
-            "coeff_degree": (-1.0, 1.0, lambda: random.uniform(-1.0, 1.0)),
-            "coeff_neighbors_unmatched": (-1.0, 1.0, lambda: random.uniform(-1.0, 1.0)),
-            "coeff_clustering": (-1.0, 1.0, lambda: random.uniform(-1.0, 1.0)),
-            "coeff_matched": (-1.0, 1.0, lambda: random.uniform(-1.0, 1.0)),
-            "coeff_round": (-1.0, 1.0, lambda: random.uniform(-1.0, 1.0)),
-            "coeff_weight": (-1.0, 1.0, lambda: random.uniform(-1.0, 1.0)),
-            "max_rounds": (5, 100, lambda: random.randint(5, 100)),
+    # Unified parameter definition: {param_name -> {min, max, default, type, description}}
+    PARAMETERS = {
+        "base_probability": {
+            "min": 0.0,
+            "max": 1.0,
+            "default": 0.5,
+            "type": "number",
+            "description": "Base activation probability",
         },
+        "coeff_degree": {
+            "min": -1.0,
+            "max": 1.0,
+            "default": 0.1,
+            "type": "number",
+            "description": "Coefficient for degree influence on activation",
+        },
+        "coeff_neighbors_unmatched": {
+            "min": -1.0,
+            "max": 1.0,
+            "default": 0.1,
+            "type": "number",
+            "description": "Coefficient for unmatched neighbors influence",
+        },
+        "coeff_clustering": {
+            "min": -1.0,
+            "max": 1.0,
+            "default": 0.1,
+            "type": "number",
+            "description": "Coefficient for clustering influence",
+        },
+        "coeff_matched": {
+            "min": -1.0,
+            "max": 1.0,
+            "default": 0.1,
+            "type": "number",
+            "description": "Coefficient for matched nodes influence",
+        },
+        "coeff_round": {
+            "min": -1.0,
+            "max": 1.0,
+            "default": 0.1,
+            "type": "number",
+            "description": "Coefficient for round number influence",
+        },
+        "coeff_weight": {
+            "min": -1.0,
+            "max": 1.0,
+            "default": 0.1,
+            "type": "number",
+            "description": "Coefficient for edge weight influence",
+        },
+        "max_rounds": {
+            "min": 5,
+            "max": 100,
+            "default": 100,
+            "type": "integer",
+            "description": "Maximum execution rounds",
+        }
     }
 
-    def __init__(
-        self,
-        seed: int | None = None,
-        activation_probability: float = 0.5,
-        activation_function: Callable[[int], float] | None = None,
-    ):
-        self.seed = seed
-        self.activation_probability = activation_probability
-        self.activation_function = activation_function
-        if seed is not None:
-            random.seed(seed)
+    # PARAMETER_DEFINITION for registry compatibility (auto-generated from PARAMETERS)
+    PARAMETER_DEFINITION = {
+        "name": "luby",
+        "display_name": "Luby Randomized Matching",
+        "parameters": {
+            param: (p["min"], p["max"], (lambda pm=param, pp=p: random.uniform(pp["min"], pp["max"]) if pp["type"] == "number" else random.randint(int(pp["min"]), int(pp["max"]))))
+            for param, p in PARAMETERS.items()
+        }
+    }
+
+    # PARAMETER_DEFAULTS for initialization (auto-generated from PARAMETERS)
+    PARAMETER_DEFAULTS = {param: p["default"] for param, p in PARAMETERS.items()}
+
+    # PARAMETER_SCHEMA for validation (auto-generated from PARAMETERS)
+    PARAMETER_SCHEMA = {
+        "type": "object",
+        "properties": {
+            param: {
+                "type": p["type"],
+                "minimum": p["min"],
+                "maximum": p["max"],
+                "description": p["description"],
+            }
+            for param, p in PARAMETERS.items()
+        },
+        "required": list(PARAMETERS.keys()),
+    }
+
+    def __init__(self, parameters: Dict = None):
+        """Initialize Luby Randomized Matching algorithm.
+
+        Args:
+            parameters: Optional parameter dict. Missing parameters use defaults from PARAMETER_DEFAULTS.
+        """
+        # Merge provided parameters with defaults
+        self.parameters = {**self.PARAMETER_DEFAULTS}
+        if parameters:
+            self.parameters.update(parameters)
+
+        # Extract specific parameters
+        self.seed = self.parameters.get("seed")
+        self.activation_probability = self.parameters.get("base_probability", 0.5)
+        self.activation_function = None
+
+        if self.seed is not None:
+            random.seed(self.seed)
 
         self._metadata = AlgorithmMetadata(
             name="Luby-style Randomized Distributed Maximal Matching",
@@ -63,9 +143,9 @@ class LubyRandomizedMatching(MatchingAlgorithm):
                 "deterministic": False,
                 "round_complexity": "O(log n)",
                 "message_complexity": "O(m log n)",
-                "max_rounds": 200,
-                "activation_probability": activation_probability,
-                "adaptive_activation": activation_function is not None,
+                "max_rounds": self.parameters.get("max_rounds", 100),
+                "activation_probability": self.activation_probability,
+                "adaptive_activation": False,
             },
         )
 

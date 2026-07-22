@@ -17,7 +17,7 @@ class TestGreedyParameterizerBasics:
     def test_greedy_name(self):
         """Should return correct algorithm name."""
         parameterizer = UnifiedAlgorithmParameterizer("greedy")
-        assert parameterizer.name() == "Greedy"
+        assert parameterizer.name() == "Greedy Matching"
 
     def test_greedy_repr(self):
         """Should have string representation."""
@@ -98,7 +98,7 @@ class TestItaiParameterizerBasics:
     def test_itai_name(self):
         """Should return correct algorithm name."""
         parameterizer = UnifiedAlgorithmParameterizer("itai")
-        assert parameterizer.name() == "Itai-Israeli"
+        assert parameterizer.name() == "Itai-Israeli Maximal Matching"
 
     def test_itai_repr(self):
         """Should have string representation."""
@@ -183,7 +183,7 @@ class TestLubyParameterizerBasics:
     def test_luby_name(self):
         """Should return correct algorithm name."""
         parameterizer = UnifiedAlgorithmParameterizer("luby")
-        assert parameterizer.name() == "Luby Randomized"
+        assert parameterizer.name() == "Luby Randomized Matching"
 
     def test_luby_repr(self):
         """Should have string representation."""

@@ -11,9 +11,9 @@ class TestCanonicalVectorInitialization:
         vector = CanonicalVector()
 
         # Verify defaults exist and are in valid ranges
-        assert 0.0 <= vector.luby_base_probability <= 1.0
-        assert 1 <= vector.itai_timeout_rounds <= 20
-        assert 5 <= vector.max_iterations <= 100
+        assert 0.0 <= vector.get("luby_base_probability") <= 1.0
+        assert 1 <= vector.get("itai_timeout_rounds") <= 20
+        assert 5 <= vector.get("max_iterations") <= 100
 
     def test_initialization_with_custom_values(self):
         """Vector should accept custom parameter values."""
@@ -29,9 +29,9 @@ class TestCanonicalVectorInitialization:
             max_iterations=50,
         )
 
-        assert vector.luby_base_probability == 0.6
-        assert vector.itai_timeout_rounds == 7
-        assert vector.max_iterations == 50
+        assert vector.get("luby_base_probability") == 0.6
+        assert vector.get("itai_timeout_rounds") == 7
+        assert vector.get("max_iterations") == 50
 
 
 class TestCanonicalVectorValidation:
@@ -88,15 +88,17 @@ class TestCanonicalVectorSerialization:
         vector = CanonicalVector()
         result = vector.to_list()
         assert isinstance(result, list)
-        assert len(result) == 10
+        # With algorithm-specific parameters discovered, we now have 13 parameters
+        assert len(result) == 13
 
     def test_from_list_creates_vector_from_list(self):
         """from_list() should create vector from list."""
-        params = [0.5, 0.2, -0.1, 0.15, 0.05, -0.02, 0.3, 7, 50, 0.05]
+        # 13 parameters in sorted order: convergence_threshold, greedy_max_rounds, itai_max_rounds, itai_timeout_rounds, luby_base_probability, luby_coeff_*, max_iterations
+        params = [0.05, 100, 100, 7, 0.5, 0.2, -0.1, 0.15, 0.05, -0.02, 0.3, 100, 50]
         vector = CanonicalVector.from_list(params)
-        assert vector.luby_base_probability == 0.5
-        assert vector.max_iterations == 50
-        assert vector.convergence_threshold == 0.05
+        assert vector.get("luby_base_probability") == 0.5
+        assert vector.get("max_iterations") == 50
+        assert vector.get("convergence_threshold") == 0.05
 
     def test_to_list_and_from_list_roundtrip(self):
         """Should roundtrip through list."""
@@ -116,8 +118,8 @@ class TestCanonicalVectorSerialization:
         params = original.to_list()
         reconstructed = CanonicalVector.from_list(params)
 
-        assert reconstructed.luby_base_probability == original.luby_base_probability
-        assert reconstructed.itai_timeout_rounds == original.itai_timeout_rounds
+        assert reconstructed.get("luby_base_probability") == original.luby_base_probability
+        assert reconstructed.get("itai_timeout_rounds") == original.itai_timeout_rounds
         assert reconstructed.max_iterations == original.max_iterations
         assert reconstructed.convergence_threshold == original.convergence_threshold
 

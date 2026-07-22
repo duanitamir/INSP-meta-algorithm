@@ -1,29 +1,16 @@
 """Central configuration for GA runs.
 
 Provides:
-- Algorithms enum: Easy selection of available algorithms
+- Algorithms enum: Easy selection of available algorithms (imported from register_all)
 - GAConfig: Dataclass for GA parameters with sensible defaults
 - MetaConfig: Combined configuration for algorithm selection + GA parameters
 """
 
-from enum import Enum
 from dataclasses import dataclass, field
 from typing import List, Tuple, Optional
 
-
-class Algorithms(Enum):
-    """Easy selection of available algorithms.
-
-    Each algorithm is defined as a tuple of (name, value).
-    Add new algorithms here when implementing them.
-    """
-    GREEDY = "greedy"
-    ITAI = "itai"
-    LUBY = "luby"
-
-    def __repr__(self) -> str:
-        """String representation for debugging."""
-        return f"Algorithms.{self.name}"
+# Import Algorithms enum from where algorithms are registered (single source of truth)
+from src.algorithms.implementations.register_all import Algorithms
 
 
 @dataclass
@@ -100,9 +87,9 @@ class MetaConfig:
         ga_config: GAConfig with GA parameters (if None, uses defaults)
 
     Example:
-        # Run GA with Greedy and Luby only, custom population size
+        # Run GA with selected algorithms and custom parameters
         config = MetaConfig(
-            algorithms=[Algorithms.GREEDY, Algorithms.LUBY],
+            algorithms=[a for a in Algorithms],  # Use all available algorithms
             ga_config=GAConfig(population_size=50, generations=20)
         )
         ga = MetaAlgorithmGA(config=config)

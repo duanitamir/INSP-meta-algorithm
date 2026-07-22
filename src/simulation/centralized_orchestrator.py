@@ -16,9 +16,6 @@ from src.meta.core.canonical_vector import CanonicalVector
 from src.state.store import StateStore
 from src.communication.message_queue import MessageQueue
 from src.simulation.algorithm_context import AlgorithmContext
-from src.algorithms.implementations.greedy_matching import GreedyMatching
-from src.algorithms.implementations.itai_israeli import ItaiIsraeliMaximalMatching
-from src.algorithms.implementations.luby_randomized import LubyRandomizedMatching
 from src.config import ExperimentConfig
 
 
@@ -47,9 +44,9 @@ class CentralizedOrchestrator:
         self.experiment_config = config or ExperimentConfig()
 
     def run_until_convergence(self, max_rounds: int = 100, vector: CanonicalVector | None = None) -> Dict[int, int]:
-        """Run three algorithms with centralized state, merge results.
+        """Run all registered algorithms with centralized state, merge results.
 
-        Runs Greedy, Itai-Israeli, and Luby sequentially on centralized StateStore.
+        Runs all algorithms from registry sequentially on independent StateStore copies.
         Merges results via conflict resolution (highest-weight edges win).
 
         Args:
@@ -63,13 +60,35 @@ class CentralizedOrchestrator:
         if vector is None:
             vector = CanonicalVector()
 
-        greedy = GreedyMatching()
-        itai = ItaiIsraeliMaximalMatching(timeout_rounds=int(vector.itai_timeout_rounds))
-        luby = LubyRandomizedMatching(activation_probability=vector.luby_base_probability)
+        # Get all algorithms from registry (100% agnostic - no hardcoding)
+        from src.meta.core.algorithm_registry import AlgorithmRegistry
+        from src.meta.core.algorithm_registry_builder import AlgorithmRegistryBuilder
+
+        registry = AlgorithmRegistry.instance()
+        available_algos = registry.all_algorithm_names()
+
+        if not available_algos:
+            raise RuntimeError("No algorithms registered")
 
         matchings = []
 
-        for algorithm in [greedy, itai, luby]:
+        # Run each algorithm on independent state (no interference between algorithms)
+        for algo_name in available_algos:
+            algo_class = AlgorithmRegistryBuilder.get_class(algo_name)
+            if not algo_class:
+                continue
+
+            # Extract parameters for this algorithm from vector
+            algo_params = registry.get_algorithm_parameters(algo_name)
+            params = {}
+            for param_name in (algo_params or {}).keys():
+                full_name = f"{algo_name}_{param_name}"
+                value = vector.get(full_name)
+                if value is not None:
+                    params[param_name] = value
+
+            algorithm = algo_class(parameters=params if params else None)
+
             # Each algorithm runs on INDEPENDENT state copy (no interference)
             # This prevents earlier algorithms from consuming nodes needed by later ones
             independent_state = StateStore(self.graph)

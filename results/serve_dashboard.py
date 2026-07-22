@@ -19,7 +19,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         # Serve files from current directory
         if self.path == '/':
-            self.path = '/ga_runs_dashboard_embedded.html'
+            self.path = '/index.html'
 
         # Handle jsons/ directory listing for live experiment discovery
         if self.path == '/jsons/' or self.path == '/jsons':
@@ -114,8 +114,8 @@ if __name__ == '__main__':
 
     with socketserver.TCPServer(("", PORT), Handler) as httpd:
         print(f"✅ Dashboard server started!")
-        print(f"📊 Open browser at: http://localhost:{PORT}/ga_runs_dashboard_embedded.html")
-        print(f"🔗 Direct JSON at: http://localhost:{PORT}/ga_runs.json")
+        print(f"📊 Open browser at: http://localhost:{PORT}/")
+        print(f"📂 Experiments directory: http://localhost:{PORT}/jsons/")
         print(f"⏹️  Press Ctrl+C to stop")
         try:
             httpd.serve_forever()

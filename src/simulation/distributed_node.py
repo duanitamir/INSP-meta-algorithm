@@ -6,11 +6,8 @@ from src.communication.message import Message
 from src.communication.message_queue import MessageQueue
 from src.communication.node_communicator import NodeCommunicator
 from src.graph.graph_manager import GraphManager
+from src.graph.local_graph import LocalGraph
 from src.metrics.metrics_collector import MetricsCollector
-from src.meta.messages.edge_conflict_protocol import (
-    EdgeProposalMessage,
-    EdgeAcceptanceMessage,
-)
 from src.config import DistributedAlgorithmConfig
 from src.meta.messages.config_gossip_message import ConfigGossipMessage
 
@@ -19,15 +16,18 @@ class DistributedNode:
     """
     Autonomous node in a fully distributed system.
 
-    Owns:
+    **Owns (Local):**
     - state: This node's algorithm state
     - inbox/outbox: This node's messages
     - round_number: Tracks its own execution rounds
     - local_metrics: Tracks own performance
-    - coordination: Convergence voting
+    - convergence_vote: Local convergence decision
+    - pending_proposals: Proposals from neighbors to resolve
 
-    Shared (read-only):
+    **Shared (Read-Only):**
     - graph: Network topology (immutable)
+    - algorithm_config: Algorithm configuration (immutable)
+    - convergence_detector: Convergence detection logic (set by orchestrator)
     """
 
     def __init__(
@@ -41,11 +41,11 @@ class DistributedNode:
         Args:
             node_id: Unique node identifier
             shared_graph: Read-only reference to network topology
-            algorithm_config: Algorithm configuration (convergence, algorithm parameters).
+            algorithm_config: Algorithm configuration with convergence and algorithm parameters.
                              If None, creates default configuration.
         """
         self.id = node_id
-        self.graph = shared_graph
+        self.graph = LocalGraph(shared_graph, node_id)
 
         # Algorithm configuration (spreads via gossip protocol)
         self.algorithm_config = algorithm_config or DistributedAlgorithmConfig()
@@ -54,88 +54,43 @@ class DistributedNode:
         self.state = NodeState(node_id)
 
         # Communication
-        self.inbox = MessageQueue(shared_graph)  # Messages TO this node
-        self.outbox = MessageQueue(shared_graph)  # Messages FROM this node
+        self.inbox = MessageQueue(shared_graph)
+        self.outbox = MessageQueue(shared_graph)
         self.communicator = NodeCommunicator(node_id, self.outbox, self.inbox)
 
         # Execution tracking
         self.round_number = 0
         self.finished = False
 
-        # Local metrics (this node's performance)
+        # Local metrics
         self.local_metrics = MetricsCollector()
 
-        # Coordination state
-        self.convergence_vote = None  # This node's convergence decision
-        self.known_convergence_votes: Dict[int, bool] = {}  # Learned from neighbors
-        self.convergence_threshold = 0.05  # Min improvement to continue
-        self.quorum_threshold = 0.5  # Min fraction to stop
-        self.last_matching_weight = 0.0  # For improvement tracking
+        # Coordination state (convergence detection)
+        self.convergence_vote = None
+        self.known_convergence_votes: Dict[int, bool] = {}
+        self.convergence_threshold = 0.05
+        self.quorum_threshold = 0.5
+        self.last_matching_weight = 0.0
 
-        # Phase 1: Conflict resolution state
-        self.pending_proposals: Dict[int, float] = {}  # proposer_id -> weight
-        self.current_match: int | None = None
-        self.best_weight = -1.0
-
-        # Phase 2: Two-phase commit state
-        self.tentative_match: int | None = None
-        self.confirmed_match: int | None = None
-
-        # Phase 4: Endpoint voting state for conflict resolution
-        self.edge_votes: Dict[Tuple[int, int], List[bool]] = {}  # edge -> [votes]
-        self.voting_quorum = 0.5  # Min fraction of endpoints that must agree
-
-        # Algorithm reference (set by simulator)
-        self.algorithm = None
+        # Conflict resolution state (pending proposals from neighbors)
+        self.pending_proposals: Dict[int, float] = {}
 
         # Convergence detector (set by orchestrator)
         self.convergence_detector: Any | None = None
 
-    def execute(self, algorithm) -> Tuple[bool, str]:
-        """
-        Execute one round of a single algorithm (for backward compatibility).
-
-        Args:
-            algorithm: MatchingAlgorithm instance to run
+    def _validate_available_algorithms(self) -> Tuple[bool, str]:
+        """Validate that all configured algorithms are registered in this process.
 
         Returns:
-            (continue_running, status_message)
+            Tuple of (is_valid, error_message). If valid, error_message is None.
         """
-        if self.finished:
-            return False, "already_finished"
+        from src.meta.core.algorithm_registry import AlgorithmRegistry
 
-        self.algorithm = algorithm
-        messages = self.inbox.get_messages(self.id)
-        self._process_coordination_messages(messages)
-
-        try:
-            new_state, algorithm_messages = algorithm.node_behavior(
-                self.id, self.state, messages, self._create_context()
-            )
-        except Exception as e:
-            return False, f"algorithm_error: {str(e)}"
-
-        self.state = new_state
-
-        self.local_metrics.record_round(
-            round_num=self.round_number,
-            messages_sent=len(algorithm_messages),
-            active_nodes=1 if self.state.get("active", True) else 0,
-        )
-
-        if algorithm_messages:
-            self.outbox.send_batch(algorithm_messages)
-
-        self._decide_convergence()
-        self._gossip_convergence_vote()
-
-        should_stop = self._should_stop_based_on_quorum()
-        if should_stop:
-            self.finished = True
-            return False, "quorum_converged"
-
-        self.round_number += 1
-        return True, "continuing"
+        registry = AlgorithmRegistry.instance()
+        for algo_name in self.algorithm_config.available_algorithms:
+            if not registry.is_algorithm_registered(algo_name):
+                return False, f"Algorithm '{algo_name}' not registered in this process"
+        return True, ""
 
     def execute_distributed_round(self, canonical_vector) -> Tuple[bool, str]:
         """
@@ -158,6 +113,11 @@ class DistributedNode:
         if self.finished:
             return False, "already_finished"
 
+        # Validate that all configured algorithms are available
+        is_valid, error = self._validate_available_algorithms()
+        if not is_valid:
+            return False, f"algorithm_validation_error: {error}"
+
         # PHASE 0: Process incoming messages
         messages = self.inbox.get_messages(self.id)
         self._process_coordination_messages(messages)
@@ -165,10 +125,10 @@ class DistributedNode:
         # PHASE 1: Get proposals from each algorithm (LOCAL SCOPE ONLY - neighbors)
         from src.meta.parameterizers.algorithm_parameterizer import UnifiedAlgorithmParameterizer
 
+        # FIXED (Task 8.3): Read from config instead of hardcoding
         parameterizers = [
-            UnifiedAlgorithmParameterizer("greedy"),
-            UnifiedAlgorithmParameterizer("itai"),
-            UnifiedAlgorithmParameterizer("luby"),
+            UnifiedAlgorithmParameterizer(algo_name)
+            for algo_name in self.algorithm_config.available_algorithms
         ]
         neighbors = list(self.graph.neighbors(self.id))
         context = self._create_context()
@@ -210,7 +170,7 @@ class DistributedNode:
         self.local_metrics.record_round(
             round_num=self.round_number,
             messages_sent=total_proposals,
-            active_nodes=1 if self.confirmed_match is not None else 0,
+            active_nodes=1 if self.state.is_matched() else 0,
         )
 
         # Send coordination messages to neighbors
@@ -228,12 +188,6 @@ class DistributedNode:
         self.round_number += 1
         return True, "continuing"
 
-    def _local_conflict_resolution(self, matchings: List[Dict[int, int]]) -> Dict[int, int]:
-        """Resolve conflicts via endpoint voting protocol."""
-        from src.meta.distributed.edge_voting import collect_proposed_edges, apply_quorum_threshold
-
-        proposed_edges = collect_proposed_edges(self.id, matchings, self.graph)
-        return apply_quorum_threshold(proposed_edges, self.id, self.voting_quorum)
 
     def _create_context(self):
         """Create algorithm context for this node."""
@@ -423,283 +377,36 @@ class DistributedNode:
             "finished": self.finished,
         }
 
-    def _send_edge_proposal(self, edge: Tuple[int, int], weight: float) -> None:
-        """Send edge proposal to the other endpoint (Phase 4).
-
-        Args:
-            edge: Edge (u, v) tuple
-            weight: Edge weight for conflict resolution
-        """
-        u, v = edge
-        recipient = v if u == self.id else u
-
-        msg = EdgeProposalMessage(
-            sender=self.id,
-            recipient=recipient,
-            payload={"edge": edge, "weight": weight},
-            round_num=self.round_number,
-        )
-
-        self.outbox.send(msg)
-
-    def _receive_edge_votes(self, messages: List[Message]) -> Dict[Tuple[int, int], List[bool]]:
-        """Extract edge acceptance votes from messages (Phase 4).
-
-        Args:
-            messages: Incoming messages
-
-        Returns:
-            Dict mapping edge -> list of votes from endpoints
-        """
-        votes: Dict[Tuple[int, int], List[bool]] = {}
-
-        for msg in messages:
-            if isinstance(msg, EdgeAcceptanceMessage):
-                edge = msg.edge
-                vote = msg.vote
-
-                if edge not in votes:
-                    votes[edge] = []
-                votes[edge].append(vote)
-
-        return votes
-
-    # ============================================================================
-    # PHASE 2: TWO-PHASE COMMIT (SYMMETRY GUARANTEE)
-    # ============================================================================
-
-    def handle_match_confirmation(self, sender: int, msg_dict: Dict) -> None:
-        """Handle match confirmation from other endpoint (Phase 2).
-
-        Args:
-            sender: Node ID of the sender
-            msg_dict: Message payload with status "CONFIRMED"
-        """
-        status = msg_dict.get("status", "")
-
-        if status == "CONFIRMED":
-            # Both sides confirmed the match
-            if self.tentative_match == sender:
-                self.confirmed_match = sender
-                self.current_match = sender
-                self.state.set_matched_to(sender)
-
-    def handle_match_cancellation(self, sender: int, msg_dict: Dict) -> None:
-        """Handle partner found better match (Phase 2).
-
-        Args:
-            sender: Node ID of the sender
-            msg_dict: Message payload with new_partner
-        """
-        new_partner = msg_dict.get("new_partner", -1)
-
-        # If we had match with sender, it's cancelled
-        if self.confirmed_match == sender:
-            self.confirmed_match = None
-            self.current_match = None
-            self.tentative_match = None
-        elif self.tentative_match == sender:
-            # Even tentative matches can be cancelled
-            self.tentative_match = None
-
-    def accept_tentative_match(self, neighbor_id: int, weight: float) -> None:
-        """Accept match tentatively (Phase 2, Phase 1 of Two-Phase).
-
-        Args:
-            neighbor_id: Node we're tentatively matching to
-            weight: Weight of edge
-        """
-        # If we have a better tentative match, cancel the old one
-        if self.tentative_match is not None and self.best_weight > weight:
-            # Keep current, reject new
-            return
-
-        # If this is better, update tentative
-        if self.tentative_match is None or weight > self.best_weight:
-            # Cancel old if existed
-            if self.tentative_match is not None:
-                self.send_match_cancellation(self.tentative_match, neighbor_id)
-
-            self.tentative_match = neighbor_id
-            self.best_weight = weight
-
-            # Send confirmation back
-            self.send_match_confirmation(neighbor_id, "CONFIRMED")
-
-    def send_match_confirmation(self, recipient: int, status: str) -> None:
-        """Send match confirmation to other endpoint (Phase 2).
-
-        Args:
-            recipient: Node to confirm match with
-            status: "CONFIRMED" or "CANCELLED"
-        """
-        msg = Message(
-            sender=self.id,
-            recipient=recipient,
-            payload={
-                "type": "MATCH_CONFIRMATION",
-                "status": status,
-                "edge": (self.id, recipient)
-            },
-            round_num=self.round_number
-        )
-
-        self.outbox.send(msg)
-
-    def send_match_cancellation(self, recipient: int, new_partner: int) -> None:
-        """Send match cancellation (found better match) (Phase 2).
-
-        Args:
-            recipient: Node we're cancelling match with
-            new_partner: Node we're switching to
-        """
-        msg = Message(
-            sender=self.id,
-            recipient=recipient,
-            payload={
-                "type": "MATCH_CANCELLATION",
-                "edge": (self.id, recipient),
-                "new_partner": new_partner
-            },
-            round_num=self.round_number
-        )
-
-        self.outbox.send(msg)
-
-    # ============================================================================
-    # PHASE 1: DISTRIBUTED CONFLICT RESOLUTION
-    # ============================================================================
-
-    def receive_edge_proposal(self, proposer_id: int, weight: float) -> None:
-        """Receive proposal from another node (Phase 1).
-
-        Args:
-            proposer_id: Node ID making the proposal
-            weight: Weight of the proposed edge
-        """
-        self.pending_proposals[proposer_id] = weight
-
-    def resolve_conflicts(self) -> int | None:
-        """Find best proposal locally (Phase 1).
-
-        Returns:
-            ID of best proposer, or None if no proposals
-        """
-        if not self.pending_proposals:
-            return None
-
-        # Sort by: (weight DESC, then node_id ASC for determinism)
-        best_proposer = max(
-            self.pending_proposals.items(),
-            key=lambda item: (item[1], -item[0])
-        )
-        return best_proposer[0]
 
     def conflict_solution(self) -> None:
-        """Resolve all pending proposals and send responses (Phase 1).
+        """Resolve all pending proposals via local endpoint voting.
 
-        Sends EdgeAcceptanceMessage to best proposer (accept)
-        and to all others (reject).
+        Selects the best proposal (highest weight) by deterministic criteria.
+        Only matches if this node is not already matched (symmetry constraint).
         """
-        best_proposer = self.resolve_conflicts()
+        # Only match if not already matched (matching constraint: each node matched at most once)
+        if self.pending_proposals and not self.state.is_matched():
+            # Find best proposer by highest weight (deterministic on node_id for tie-break)
+            best_neighbor, best_weight = max(
+                self.pending_proposals.items(),
+                key=lambda item: (item[1], -item[0])
+            )
 
-        if best_proposer is None:
-            # No proposals, nothing to do
-            self.pending_proposals.clear()
-            return
+            # Accept the best proposal
+            self.state.set_matched_to(best_neighbor)
 
-        # Send acceptance to best proposer
-        self.send_edge_acceptance_message(
-            recipient=best_proposer,
-            status="ACCEPTED",
-            reason="Best proposal"
-        )
-
-        # Send rejection to all others
-        for proposer_id in self.pending_proposals.keys():
-            if proposer_id != best_proposer:
-                self.send_edge_acceptance_message(
-                    recipient=proposer_id,
-                    status="REJECTED",
-                    reason="Better proposal chosen"
-                )
-
-        # Clear pending proposals for next round
+        # Clear proposals for next round
         self.pending_proposals.clear()
 
-    def send_edge_acceptance_message(
-        self,
-        recipient: int,
-        status: str,
-        reason: str
-    ) -> None:
-        """Send acceptance/rejection to proposer (Phase 1).
-
-        Args:
-            recipient: Node ID of proposer
-            status: "ACCEPTED" or "REJECTED"
-            reason: Human-readable reason
-        """
-        msg = Message(
-            sender=self.id,
-            recipient=recipient,
-            payload={
-                "type": "EDGE_ACCEPTANCE",
-                "edge": (self.id, recipient),
-                "vote": (status == "ACCEPTED"),
-                "reason": reason,
-                "status": status
-            },
-            round_num=self.round_number
-        )
-
-        self.outbox.send(msg)
-
-    def handle_edge_acceptance(self, msg: EdgeAcceptanceMessage) -> None:
-        """Handle response to our proposal (Phase 1).
-
-        Args:
-            msg: EdgeAcceptanceMessage
-        """
-        if msg.vote:  # msg.vote == True means ACCEPTED
-            # Proposer accepted us
-            self.current_match = msg.sender
-            self.best_weight = self.graph.get_edge_weight(self.id, msg.sender)
-        else:
-            # Proposer rejected us - we can try next neighbor next round
-            pass
-
     def _process_phase2_confirmations(self, messages: List[Message]) -> None:
-        """Process Phase 1/2 acceptance and confirmation messages.
-
-        Handles:
-        - EDGE_ACCEPTANCE: Response to our proposal (Phase 1)
-        - MATCH_CONFIRMATION: Two-phase commit confirmation (Phase 2)
-        - MATCH_CANCELLATION: Partner found better match (Phase 2)
+        """Process phase 2 confirmation messages.
 
         Args:
             messages: All messages received this round
         """
-        for msg in messages:
-            payload = msg.payload
-            msg_type = payload.get("type")
-            sender = msg.sender
-
-            if msg_type == "EDGE_ACCEPTANCE":
-                # Phase 1: Response to our proposal
-                status = payload.get("status", "")
-                reason = payload.get("reason", "")
-                edge_weight = self.graph.get_edge_weight(self.id, sender)
-
-                if status == "ACCEPTED":
-                    # Our proposal was accepted - move to tentative match
-                    self.accept_tentative_match(sender, edge_weight)
-                # If REJECTED, do nothing (we can try other neighbors)
-
-            elif msg_type == "MATCH_CONFIRMATION":
-                self.handle_match_confirmation(sender, payload)
-            elif msg_type == "MATCH_CANCELLATION":
-                self.handle_match_cancellation(sender, payload)
+        # Phase 2/4 message handling moved to algorithm level
+        # This method is a placeholder for future distributed consensus protocols
+        pass
 
     def reset(self) -> None:
         """Reset node to initial state."""
@@ -712,7 +419,6 @@ class DistributedNode:
         self.convergence_vote = None
         self.known_convergence_votes.clear()
         self.last_matching_weight = 0.0
-        self.edge_votes.clear()
         self.pending_proposals.clear()
 
     # ============================================================================
@@ -722,19 +428,26 @@ class DistributedNode:
     def gossip_config(self) -> None:
         """Send current algorithm configuration to random neighbors.
 
-        Nodes spread their algorithm configuration via gossip protocol.
+        Nodes spread their algorithm configuration via gossip protocol,
+        including available algorithms list (Phase 8 - NEW).
         Neighbors will accept if version is higher than their current.
         """
         neighbors = list(self.graph.neighbors(self.id))
         if not neighbors:
             return
 
-        # Create config message
+        # Create config message (includes algorithm list - Phase 8 - NEW)
+        from src.meta.core.algorithm_registry import AlgorithmRegistry
+        registry = AlgorithmRegistry.instance()
+        available_algos = self.algorithm_config.available_algorithms or registry.all_algorithm_names()
+
         msg = ConfigGossipMessage(
             sender=self.id,
             recipient=-1,  # Will be set per-neighbor
             payload=self.algorithm_config.to_dict(),
+            available_algorithms=available_algos,
             version=self.algorithm_config.version,
+            algorithm_list_version=self.algorithm_config.algorithm_list_version,
             round_num=self.round_number
         )
 
@@ -749,7 +462,9 @@ class DistributedNode:
                 sender=self.id,
                 recipient=neighbor,
                 payload=msg.payload.copy(),
+                available_algorithms=msg.available_algorithms,
                 version=msg.version,
+                algorithm_list_version=msg.algorithm_list_version,
                 round_num=self.round_number
             )
             self.outbox.send(neighbor_msg)
@@ -762,21 +477,14 @@ class DistributedNode:
         Args:
             msg: ConfigGossipMessage with algorithm configuration
         """
-        if self._should_accept_config(msg):
+        if msg.version > self.algorithm_config.version:
             # Adopt this configuration
             self.algorithm_config = DistributedAlgorithmConfig.from_dict(msg.payload)
-            # Ensure version is set correctly
             self.algorithm_config.version = msg.version
 
-    def _should_accept_config(self, msg: ConfigGossipMessage) -> bool:
-        """Check if we should accept configuration from neighbor.
-
-        Version-based ordering: only accept if msg version > current version.
-
-        Args:
-            msg: ConfigGossipMessage to evaluate
-
-        Returns:
-            True if we should adopt this configuration, False otherwise
-        """
-        return msg.version > self.algorithm_config.version
+            # Update algorithm list if neighbor has newer version
+            if msg.algorithm_list_version > self.algorithm_config.algorithm_list_version:
+                new_algos = msg.available_algorithms or []
+                if new_algos != self.algorithm_config.available_algorithms:
+                    self.algorithm_config.available_algorithms = new_algos.copy()
+                    self.algorithm_config.algorithm_list_version = msg.algorithm_list_version

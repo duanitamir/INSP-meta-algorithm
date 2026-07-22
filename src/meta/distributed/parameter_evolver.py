@@ -80,7 +80,7 @@ class DistributedParameterEvolver:
         Args:
             node_id: Node performing evaluation
             graph: Graph to evaluate on
-            parameterizers: List of [Greedy, Itai, Luby] parameterizers
+            parameterizers: List of algorithm parameterizers
             fitness_evaluator: FitnessEvaluator instance
         """
         state = self.get_node_state(node_id)
@@ -294,7 +294,10 @@ class DistributedParameterEvolver:
     def _crossover(
         self, parent1: CanonicalVector, parent2: CanonicalVector
     ) -> CanonicalVector:
-        """Blend two parent vectors (single-point crossover).
+        """Blend two parent vectors using registry-driven approach (100% agnostic).
+
+        Dynamically iterates over all parameters from AlgorithmRegistry instead
+        of hardcoding parameter names. Works with any algorithm combination.
 
         Args:
             parent1: First parent vector
@@ -303,39 +306,56 @@ class DistributedParameterEvolver:
         Returns:
             Child vector with blended parameters
         """
-        # Randomly choose blend point
-        blend_factor = random.random()
+        from src.meta.core.algorithm_registry import AlgorithmRegistry
 
-        return CanonicalVector(
-            luby_base_probability=parent1.luby_base_probability * blend_factor
-            + parent2.luby_base_probability * (1 - blend_factor),
-            luby_coeff_degree=parent1.luby_coeff_degree * blend_factor
-            + parent2.luby_coeff_degree * (1 - blend_factor),
-            luby_coeff_neighbors_unmatched=parent1.luby_coeff_neighbors_unmatched
-            * blend_factor
-            + parent2.luby_coeff_neighbors_unmatched * (1 - blend_factor),
-            luby_coeff_clustering=parent1.luby_coeff_clustering * blend_factor
-            + parent2.luby_coeff_clustering * (1 - blend_factor),
-            luby_coeff_matched=parent1.luby_coeff_matched * blend_factor
-            + parent2.luby_coeff_matched * (1 - blend_factor),
-            luby_coeff_round=parent1.luby_coeff_round * blend_factor
-            + parent2.luby_coeff_round * (1 - blend_factor),
-            luby_coeff_weight=parent1.luby_coeff_weight * blend_factor
-            + parent2.luby_coeff_weight * (1 - blend_factor),
-            itai_timeout_rounds=int(
-                parent1.itai_timeout_rounds * blend_factor
-                + parent2.itai_timeout_rounds * (1 - blend_factor)
-            ),
-            max_iterations=int(
-                parent1.max_iterations * blend_factor
-                + parent2.max_iterations * (1 - blend_factor)
-            ),
-            convergence_threshold=parent1.convergence_threshold * blend_factor
-            + parent2.convergence_threshold * (1 - blend_factor),
-        )
+        blend_factor = random.random()
+        registry = AlgorithmRegistry.instance()
+        blended_params = {}
+
+        # Iterate over all algorithms and their parameters
+        for algo_name in registry.all_algorithm_names():
+            algo_params = registry.get_algorithm_parameters_unprefixed(algo_name)
+
+            for param_name, (min_val, max_val, _) in algo_params.items():
+                full_param_name = f"{algo_name}_{param_name}"
+
+                # Get values from parents
+                parent1_val = parent1.get(full_param_name)
+                parent2_val = parent2.get(full_param_name)
+
+                # Skip if either parent doesn't have this parameter
+                if parent1_val is None or parent2_val is None:
+                    continue
+
+                # Blend: weighted average of parents
+                blended_val = parent1_val * blend_factor + parent2_val * (1 - blend_factor)
+
+                # Handle integer parameters
+                if isinstance(min_val, int):
+                    blended_params[full_param_name] = int(blended_val)
+                else:
+                    blended_params[full_param_name] = blended_val
+
+        # Add base parameters (not algorithm-specific)
+        base_params = ["max_iterations", "convergence_threshold"]
+        for param in base_params:
+            parent1_val = parent1.get(param)
+            parent2_val = parent2.get(param)
+            if parent1_val is not None and parent2_val is not None:
+                blended_val = parent1_val * blend_factor + parent2_val * (1 - blend_factor)
+                if param == "max_iterations":
+                    blended_params[param] = int(blended_val)
+                else:
+                    blended_params[param] = blended_val
+
+        # Create child from blended parameters
+        return CanonicalVector.from_dict({**parent1.to_dict(), **blended_params})
 
     def _mutate(self, vector: CanonicalVector) -> CanonicalVector:
-        """Apply random mutations to a vector.
+        """Apply random mutations to a vector using parameter bounds from registry (100% agnostic).
+
+        Dynamically reads parameter bounds from AlgorithmRegistry instead of hardcoding.
+        Works with any algorithm combination and parameter definition.
 
         Args:
             vector: Vector to mutate
@@ -343,10 +363,14 @@ class DistributedParameterEvolver:
         Returns:
             Mutated vector
         """
-        mutation_strength = 0.1  # 10% change per parameter
+        from src.meta.core.algorithm_registry import AlgorithmRegistry
 
-        def mutate_param(value: float, lower: float, upper: float) -> float:
-            """Mutate a single parameter with bounds."""
+        mutation_strength = 0.1  # 10% change per parameter
+        registry = AlgorithmRegistry.instance()
+        mutated_params = {}
+
+        def mutate_float_param(value: float, lower: float, upper: float) -> float:
+            """Mutate a float parameter with bounds."""
             if random.random() < self.mutation_rate:
                 delta = random.gauss(0, mutation_strength)
                 return max(lower, min(upper, value + delta))
@@ -359,24 +383,49 @@ class DistributedParameterEvolver:
                 return max(lower, min(upper, value + delta))
             return value
 
-        return CanonicalVector(
-            luby_base_probability=mutate_param(
-                vector.luby_base_probability, 0.0, 1.0
-            ),
-            luby_coeff_degree=mutate_param(vector.luby_coeff_degree, -1.0, 1.0),
-            luby_coeff_neighbors_unmatched=mutate_param(
-                vector.luby_coeff_neighbors_unmatched, -1.0, 1.0
-            ),
-            luby_coeff_clustering=mutate_param(vector.luby_coeff_clustering, -1.0, 1.0),
-            luby_coeff_matched=mutate_param(vector.luby_coeff_matched, -1.0, 1.0),
-            luby_coeff_round=mutate_param(vector.luby_coeff_round, -1.0, 1.0),
-            luby_coeff_weight=mutate_param(vector.luby_coeff_weight, -1.0, 1.0),
-            itai_timeout_rounds=mutate_int_param(vector.itai_timeout_rounds, 1, 20),
-            max_iterations=mutate_int_param(vector.max_iterations, 5, 100),
-            convergence_threshold=mutate_param(
-                vector.convergence_threshold, 0.0, 0.1
-            ),
-        )
+        # Mutate algorithm-specific parameters using bounds from registry
+        for algo_name in registry.all_algorithm_names():
+            algo_params = registry.get_algorithm_parameters_unprefixed(algo_name)
+
+            for param_name, (min_val, max_val, _) in algo_params.items():
+                full_param_name = f"{algo_name}_{param_name}"
+                current_val = vector.get(full_param_name)
+
+                if current_val is None:
+                    continue
+
+                # Use appropriate mutation based on parameter type
+                if isinstance(min_val, int):
+                    mutated_params[full_param_name] = mutate_int_param(
+                        int(current_val), int(min_val), int(max_val)
+                    )
+                else:
+                    mutated_params[full_param_name] = mutate_float_param(
+                        float(current_val), float(min_val), float(max_val)
+                    )
+
+        # Mutate base parameters using fixed bounds
+        base_bounds = {
+            "max_iterations": (5, 100, True),      # (min, max, is_int)
+            "convergence_threshold": (0.0, 0.1, False),
+        }
+
+        for param_name, (min_val, max_val, is_int) in base_bounds.items():
+            current_val = vector.get(param_name)
+            if current_val is None:
+                continue
+
+            if is_int:
+                mutated_params[param_name] = mutate_int_param(
+                    int(current_val), int(min_val), int(max_val)
+                )
+            else:
+                mutated_params[param_name] = mutate_float_param(
+                    float(current_val), float(min_val), float(max_val)
+                )
+
+        # Create mutated vector
+        return CanonicalVector.from_dict({**vector.to_dict(), **mutated_params})
 
     def name(self) -> str:
         """Return component name."""

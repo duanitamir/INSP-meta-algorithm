@@ -36,8 +36,7 @@ class MetaAlgorithmGA:
         elite_fraction: float = 0.5,
         early_stop_generations: int = 10,
         num_workers: int = 4,
-        use_cascading: bool = True,
-        use_distributed: bool = False,
+        use_cascading: bool = False,
     ) -> None:
         """Initialize genetic algorithm.
 
@@ -49,21 +48,19 @@ class MetaAlgorithmGA:
             elite_fraction: Fraction of population to keep as elite [0.1, 0.9]
             early_stop_generations: Stop if no improvement for N generations (default 10)
             num_workers: Number of parallel workers for evaluation
-            use_cascading: If True, use DistributedCascadingEvaluator; if False, use standard FitnessEvaluator
-            use_distributed: If True, use distributed orchestrator (autonomous nodes, message passing)
+            use_cascading: If True, use cascading evaluator (multi-pass on shrinking graphs)
+                          If False, use standard evaluator (single pass on full graph)
         """
         if fitness_evaluator is None:
-            # Create evaluator based on flags
-            if use_distributed:
-                # Distributed mode: autonomous nodes with message passing
-                self.fitness_evaluator = FitnessEvaluator(use_distributed=True, max_workers=num_workers)
-            elif use_cascading:
+            # Create evaluator based on cascading flag
+            # Both modes use DistributedOrchestrator (100% distributed)
+            if use_cascading:
                 # Cascading mode: run autonomous nodes repeatedly on shrinking graphs
                 from src.meta.core.distributed_cascading_evaluator import DistributedCascadingEvaluator
-                self.fitness_evaluator = DistributedCascadingEvaluator()
+                self.fitness_evaluator = DistributedCascadingEvaluator(max_workers=num_workers)
             else:
-                # Standard centralized mode
-                self.fitness_evaluator = FitnessEvaluator(use_distributed=False)
+                # Standard distributed mode: run autonomous nodes once on full graph
+                self.fitness_evaluator = FitnessEvaluator(max_workers=num_workers)
         else:
             self.fitness_evaluator = fitness_evaluator
         self.population_size = population_size
@@ -153,40 +150,14 @@ class MetaAlgorithmGA:
 
     def _crossover(self, parent1: CanonicalVector, parent2: CanonicalVector) -> CanonicalVector:
         """Create offspring by blending two parents."""
-        p1, p2 = parent1.to_list(), parent2.to_list()
-        child = [p1[i] if random.random() < 0.5 else p2[i] for i in range(len(p1))]
-        return self._from_list(child)
+        # Use built-in crossover method
+        return parent1.crossover(parent2)
 
     def _mutate(self, vector: CanonicalVector, mutation_rate: float = None) -> CanonicalVector:
         """Mutate vector by perturbing parameters."""
         mutation_rate = mutation_rate or self.base_mutation_rate
-        bounds = [
-            (0.0, 1.0), (-1.0, 1.0), (-1.0, 1.0), (-1.0, 1.0), (-1.0, 1.0),
-            (-1.0, 1.0), (-1.0, 1.0), (1.0, 20.0), (5.0, 20.0), (0.0, 0.1),
-        ]
-        values = vector.to_list()
-        mutated = values.copy()
-        for i in range(len(mutated)):
-            if random.random() < mutation_rate:
-                min_val, max_val = bounds[i]
-                perturbation = random.uniform(-0.2, 0.2) * (max_val - min_val)
-                mutated[i] = max(min_val, min(max_val, mutated[i] + perturbation))
-        return self._from_list(mutated)
-
-    def _from_list(self, values: List) -> CanonicalVector:
-        """Create CanonicalVector from list of 10 parameter values."""
-        return CanonicalVector(
-            luby_base_probability=float(values[0]),
-            luby_coeff_degree=float(values[1]),
-            luby_coeff_neighbors_unmatched=float(values[2]),
-            luby_coeff_clustering=float(values[3]),
-            luby_coeff_matched=float(values[4]),
-            luby_coeff_round=float(values[5]),
-            luby_coeff_weight=float(values[6]),
-            itai_timeout_rounds=int(values[7]),
-            max_iterations=int(values[8]),
-            convergence_threshold=float(values[9]),
-        )
+        # Use built-in mutate method
+        return vector.mutate(mutation_rate)
 
     def name(self) -> str:
         """Return GA name."""

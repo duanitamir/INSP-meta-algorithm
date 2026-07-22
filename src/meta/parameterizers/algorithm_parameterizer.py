@@ -1,10 +1,7 @@
-"""Unified parameterizer for all 3 matching algorithms.
+"""Unified parameterizer for all matching algorithms.
 
-Consolidates Greedy, Itai-Israeli, and Luby Randomized parameterizers into
-a single generic implementation that dispatches based on algorithm type.
-
-Algorithm declarations are stored in ALGORITHM_DEFINITIONS for dynamic
-configuration system support.
+Generic, registry-driven implementation that dispatches based on algorithm type.
+Discovers and executes all registered algorithms without hardcoded algorithm references.
 """
 
 import os
@@ -19,52 +16,42 @@ from src.simulation.node_context import NodeContext
 
 
 class UnifiedAlgorithmParameterizer(BaseParameterizer):
-    """Unified parameterizer for all 3 matching algorithms.
+    """Unified parameterizer for all matching algorithms.
 
-    Handles parameter extraction and execution for:
-    - Greedy: Fast, locally optimal
-    - Itai-Israeli: Guaranteed maximal
-    - Luby Randomized: Parallel, tunable via coefficients
-
-    Reads algorithm parameters from algorithm classes' PARAMETER_DEFINITION
-    for use by AlgorithmRegistry and dynamic configuration system.
+    Generic implementation that handles parameter extraction and execution
+    for any registered algorithm via AlgorithmRegistry.
 
     Uses Template Method pattern from base class.
     """
 
     @property
     def ALGORITHM_DEFINITIONS(self) -> Dict[str, Dict]:
-        """Dynamically build algorithm definitions from algorithm classes.
+        """Get algorithm definitions from AlgorithmRegistryBuilder.
 
-        Each algorithm class declares its parameters in PARAMETER_DEFINITION.
-        This property reads from those classes to keep algorithms self-contained.
+        Algorithms self-register when their modules are imported (zero hardcoded imports).
 
         Returns:
             Dict mapping algorithm name -> definition with "name" and "parameters" keys
         """
-        from src.algorithms.implementations.greedy_matching import GreedyMatching
-        from src.algorithms.implementations.itai_israeli import ItaiIsraeliMaximalMatching
-        from src.algorithms.implementations.luby_randomized import LubyRandomizedMatching
-
-        definitions = {}
-        for algo_class in [GreedyMatching, ItaiIsraeliMaximalMatching, LubyRandomizedMatching]:
-            if hasattr(algo_class, "PARAMETER_DEFINITION"):
-                param_def = algo_class.PARAMETER_DEFINITION
-                definitions[param_def["name"]] = param_def
-        return definitions
+        from src.meta.core.algorithm_registry_builder import AlgorithmRegistryBuilder
+        return AlgorithmRegistryBuilder.get_all_definitions()
 
     def __init__(self, algorithm_type: str):
         """Initialize parameterizer for specific algorithm.
 
         Args:
-            algorithm_type: One of "greedy", "itai", "luby"
+            algorithm_type: Algorithm name (discovered from registry)
 
         Raises:
-            ValueError: If algorithm_type not recognized
+            ValueError: If algorithm_type not recognized in registry
         """
-        if algorithm_type not in ["greedy", "itai", "luby"]:
+        from src.meta.core.algorithm_registry import AlgorithmRegistry
+
+        registry = AlgorithmRegistry.instance()
+        if algorithm_type not in registry.all_algorithm_names():
+            available = ", ".join(registry.all_algorithm_names())
             raise ValueError(
-                f"Unknown algorithm: {algorithm_type}. " "Must be 'greedy', 'itai', or 'luby'."
+                f"Unknown algorithm: {algorithm_type}. Available: {available}"
             )
         self.algorithm_type = algorithm_type
         self._cached_round = None
@@ -73,45 +60,62 @@ class UnifiedAlgorithmParameterizer(BaseParameterizer):
         self._max_neighbors = 1
 
     def _extract_parameters(self, canonical_vector: CanonicalVector) -> Dict[str, Any]:
-        """Extract algorithm-specific parameters from canonical vector."""
-        extractors = {
-            "greedy": lambda v: {"max_rounds": int(v.max_iterations)},
-            "itai": lambda v: {
-                "timeout_rounds": v.itai_timeout_rounds,
-                "max_rounds": int(v.max_iterations),
-            },
-            "luby": lambda v: {
-                "base_probability": v.luby_base_probability,
-                "coeff_degree": v.luby_coeff_degree,
-                "coeff_neighbors_unmatched": v.luby_coeff_neighbors_unmatched,
-                "coeff_clustering": v.luby_coeff_clustering,
-                "coeff_matched": v.luby_coeff_matched,
-                "coeff_round": v.luby_coeff_round,
-                "coeff_weight": v.luby_coeff_weight,
-                "max_rounds": int(v.max_iterations),
-            },
-        }
-        return extractors[self.algorithm_type](canonical_vector)
+        """Extract algorithm-specific parameters from canonical vector (100% generic).
+
+        Reads from algorithm's PARAMETER_DEFINITION and extracts matching values
+        from canonical vector. Uses None for missing parameters (algorithms handle defaults).
+
+        This is completely generic - works with any algorithm without hard-coding.
+        """
+        from src.meta.core.algorithm_registry import AlgorithmRegistry
+
+        # Get algorithm definition from registry
+        registry = AlgorithmRegistry.instance()
+        algo_def = registry.get(self.algorithm_type)
+
+        if not algo_def or "parameters" not in algo_def:
+            # Fallback: return empty dict (algorithm will use defaults)
+            return {}
+
+        # Extract each parameter from canonical vector
+        parameters = {}
+        for param_name in algo_def["parameters"].keys():
+            # Build the full parameter name (with algorithm prefix if needed)
+            full_param_name = f"{self.algorithm_type}_{param_name}"
+
+            # Try to get from vector (with algorithm prefix)
+            value = canonical_vector.get(full_param_name)
+
+            # If not found and param_name is a base parameter, try without prefix
+            if value is None and param_name in ["max_iterations", "convergence_threshold"]:
+                value = canonical_vector.get(param_name)
+
+            # Add to parameters dict (None means algorithm will use defaults)
+            if value is not None:
+                parameters[param_name] = value
+
+        return parameters
 
     def _create_vector_from_params(
         self, parameters: Dict[str, Any], max_rounds: int
     ) -> CanonicalVector:
-        """Create CanonicalVector from algorithm-specific parameters."""
-        if self.algorithm_type == "greedy":
-            return CanonicalVector()
-        elif self.algorithm_type == "itai":
-            return CanonicalVector(itai_timeout_rounds=parameters.get("timeout_rounds", 5))
-        elif self.algorithm_type == "luby":
-            return CanonicalVector(
-                luby_base_probability=parameters.get("base_probability", 0.5),
-                luby_coeff_degree=parameters.get("coeff_degree", 0.0),
-                luby_coeff_neighbors_unmatched=parameters.get("coeff_neighbors_unmatched", 0.0),
-                luby_coeff_clustering=parameters.get("coeff_clustering", 0.0),
-                luby_coeff_matched=parameters.get("coeff_matched", 0.0),
-                luby_coeff_round=parameters.get("coeff_round", 0.0),
-                luby_coeff_weight=parameters.get("coeff_weight", 0.0),
-                max_iterations=max_rounds,
-            )
+        """Create CanonicalVector from parameters (100% generic).
+
+        Builds kwargs dict by prefixing parameter names with algorithm name,
+        then creates vector with those parameters. Works with any algorithm.
+        """
+        # Always set base parameters
+        kwargs = {
+            "max_iterations": max_rounds,
+            "convergence_threshold": 0.05,
+        }
+
+        # Add algorithm-specific parameters with algorithm prefix
+        for param_name, param_value in parameters.items():
+            full_param_name = f"{self.algorithm_type}_{param_name}"
+            kwargs[full_param_name] = param_value
+
+        return CanonicalVector(**kwargs)
 
     def _run_algorithm(
         self,
@@ -169,10 +173,7 @@ class UnifiedAlgorithmParameterizer(BaseParameterizer):
 
         message_queue = MessageQueue(graph)
         # Use the full max_rounds value BUT cap at reasonable limit for performance
-        # Old cap of 3 was too restrictive for Itai-Israeli (recipients couldn't process CONFIRMs)
-        # Cap of 5 was breaking Luby - randomized protocol needs more rounds to establish matches
-        # New cap: use 10 which gives enough rounds for both Itai handshake AND Luby randomized convergence
-        # Math: ~3 rounds for Greedy convergence + 5-7 rounds for Luby randomized protocol + 2 rounds for Itai CONFIRM = 10 needed
+        # Cap at 10 rounds to balance thoroughness with execution time
         # Allows consecutive_inactive_rounds counter to work: need 2 consecutive for termination
         max_rounds_user = parameters.get("max_rounds", 100)
         max_rounds = min(max_rounds_user, 10)
@@ -209,7 +210,7 @@ class UnifiedAlgorithmParameterizer(BaseParameterizer):
         consecutive_inactive_rounds = 0
 
         with executor_context:
-            # Pre-compute round statistics for Luby
+            # Pre-compute round statistics for algorithms that use them
             # These don't change within a round, so compute once instead of per-node
             self._round_stats = self._compute_round_statistics(graph)
 
@@ -294,9 +295,8 @@ class UnifiedAlgorithmParameterizer(BaseParameterizer):
                     state_store.batch_update_node_states(execution_updates)
 
                 # Check if all nodes are inactive (true convergence)
-                # With Itai-Israeli handshake, recipients need extra rounds to process CONFIRMs
-                # after initiators have already matched. So we require 2 consecutive rounds of inactivity
-                # to be confident that everyone is truly done (not just between phases of negotiation)
+                # Require 2 consecutive rounds of inactivity to be confident all are truly done
+                # (not just between protocol phases of negotiation)
                 all_inactive = all(
                     not state_store.get_node_state(nid).get("active", False)
                     for nid in node_ids
@@ -348,28 +348,22 @@ class UnifiedAlgorithmParameterizer(BaseParameterizer):
         return valid_matching
 
     def name(self) -> str:
-        """Return algorithm name."""
-        names = {
-            "greedy": "Greedy",
-            "itai": "Itai-Israeli",
-            "luby": "Luby Randomized",
-        }
-        return names.get(self.algorithm_type, "Unknown")
+        """Return algorithm display name (100% agnostic - from registry)."""
+        from src.meta.core.algorithm_registry_builder import AlgorithmRegistryBuilder
+
+        return AlgorithmRegistryBuilder.get_display_name(self.algorithm_type)
 
     def _get_algorithm_instance(self):
-        """Get algorithm instance for initialization."""
-        from src.algorithms.implementations.greedy_matching import GreedyMatching
-        from src.algorithms.implementations.itai_israeli import ItaiIsraeliMaximalMatching
-        from src.algorithms.implementations.luby_randomized import LubyRandomizedMatching
+        """Get algorithm instance for initialization (from builder, no hardcoded imports).
 
-        if self.algorithm_type == "greedy":
-            return GreedyMatching()
-        elif self.algorithm_type == "itai":
-            return ItaiIsraeliMaximalMatching(timeout_rounds=5)
-        elif self.algorithm_type == "luby":
-            return LubyRandomizedMatching(activation_probability=0.5)
-        else:
+        Retrieves algorithm class from AlgorithmRegistryBuilder by name.
+        """
+        from src.meta.core.algorithm_registry_builder import AlgorithmRegistryBuilder
+
+        algo_class = AlgorithmRegistryBuilder.get_class(self.algorithm_type)
+        if not algo_class:
             raise ValueError(f"Unknown algorithm type: {self.algorithm_type}")
+        return algo_class()
 
     def execute_local_step(
         self, node_context: NodeContext
@@ -382,10 +376,8 @@ class UnifiedAlgorithmParameterizer(BaseParameterizer):
         Returns:
             Tuple of (new_node_state, outgoing_messages)
         """
-        from src.algorithms.implementations.greedy_matching import GreedyMatching
-        from src.algorithms.implementations.itai_israeli import ItaiIsraeliMaximalMatching
-        from src.algorithms.implementations.luby_randomized import LubyRandomizedMatching
         from src.simulation.algorithm_context import AlgorithmContext
+        from src.meta.core.algorithm_registry_builder import AlgorithmRegistryBuilder
 
         node_id = node_context.node_id
         current_state = node_context.state
@@ -398,114 +390,47 @@ class UnifiedAlgorithmParameterizer(BaseParameterizer):
             round_num=node_context.round_number,
         )
 
-        if self.algorithm_type == "greedy":
-            greedy = GreedyMatching()
-            new_state, outgoing_messages = greedy.node_behavior(
-                node_id=node_id,
-                node_state=current_state,
-                messages=incoming_messages,
-                context=context,
-            )
+        # Extract parameters for this algorithm (100% generic, no hardcoded algorithm names)
+        from src.meta.core.algorithm_registry import AlgorithmRegistry
 
-        elif self.algorithm_type == "itai":
-            timeout_rounds = node_context.vector.itai_timeout_rounds
-            itai = ItaiIsraeliMaximalMatching(timeout_rounds=timeout_rounds)
-            new_state, outgoing_messages = itai.node_behavior(
-                node_id=node_id,
-                node_state=current_state,
-                messages=incoming_messages,
-                context=context,
-            )
+        registry = AlgorithmRegistry.instance()
+        algo_def = registry.get(self.algorithm_type)
+        if not algo_def:
+            raise ValueError(f"Unknown algorithm type: {self.algorithm_type}")
 
-        elif self.algorithm_type == "luby":
-            # Extract parameters and create adaptive activation function
-            base_prob = node_context.vector.luby_base_probability
-            coeff_degree = node_context.vector.luby_coeff_degree
-            coeff_neighbors = node_context.vector.luby_coeff_neighbors_unmatched
-            coeff_clustering = node_context.vector.luby_coeff_clustering
-            coeff_matched = node_context.vector.luby_coeff_matched
-            coeff_round = node_context.vector.luby_coeff_round
-            coeff_weight = node_context.vector.luby_coeff_weight
+        # Get parameter definitions for this algorithm
+        param_defs = algo_def.get("parameters", {})
 
-            # OPTIMIZATION: Use pre-computed round statistics (computed once at start of algorithm)
-            # These used to be computed inside activation_fn, wasting O(n×d) time per node
-            # Now they're cached in self._round_stats (computed once before any parallel execution)
-            # Fallback for direct calls (e.g., in tests): compute on-the-fly
-            if not hasattr(self, '_round_stats') or self._round_stats is None:
-                round_stats = self._compute_round_statistics(node_context.graph)
-            else:
-                round_stats = self._round_stats
-            max_degree = round_stats["max_degree"]
-            max_weight = round_stats["max_weight"]
-            max_neighbors = round_stats["max_neighbors"]
+        # Dynamically extract parameters from CanonicalVector
+        params = {}
+        for param_name in param_defs.keys():
+            full_param_name = f"{self.algorithm_type}_{param_name}"
+            value = node_context.vector.get(full_param_name)
+            if value is not None:
+                params[param_name] = value
 
-            def activation_fn(nid: int) -> float:
-                """Compute adaptive activation probability for a node."""
-                if nid != node_id:
-                    return base_prob
+        # Get algorithm instance from builder (no hardcoded imports)
+        algo_class = AlgorithmRegistryBuilder.get_class(self.algorithm_type)
+        if not algo_class:
+            raise ValueError(f"Unknown algorithm type: {self.algorithm_type}")
 
-                # Use local neighbors dict from node state (distributed approach)
-                neighbors = list(current_state.neighbors.keys())
-                degree = len(neighbors)
-                normalized_degree = degree / max_degree if max_degree > 0 else 0
+        # Create algorithm instance with extracted parameters (100% generic)
+        algo_instance = algo_class(parameters=params if params else None)
 
-                # Count unmatched neighbors (use local neighbors dict)
-                unmatched_count = current_state.get_unmatched_neighbors().__len__()
-                normalized_neighbors = unmatched_count / max(len(neighbors), 1)
-
-                # Clustering coefficient
-                if len(neighbors) > 1:
-                    edges_between = 0
-                    for i, n1 in enumerate(neighbors):
-                        for n2 in neighbors[i + 1 :]:
-                            if graph.has_edge(n1, n2):
-                                edges_between += 1
-                    max_edges = len(neighbors) * (len(neighbors) - 1) / 2
-                    clustering = edges_between / max_edges if max_edges > 0 else 0.0
-                else:
-                    clustering = 0.0
-
-                # Count matched neighbors (use local neighbors dict)
-                matched_count = current_state.get_matched_neighbors().__len__()
-                normalized_matched = matched_count / max(len(neighbors), 1) if neighbors else 0.0
-
-                # Normalize edge weight (use local neighbors dict)
-                if neighbors:
-                    weights = [current_state.neighbors[n]["weight"] for n in neighbors]
-                    avg_weight = sum(weights) / len(weights)
-                else:
-                    avg_weight = 0.0
-                normalized_weight = avg_weight / max_weight if max_weight > 0 else 0
-
-                # Adaptive probability
-                prob = base_prob
-                prob += coeff_degree * (normalized_degree - 0.5)
-                prob += coeff_neighbors * (normalized_neighbors - 0.5)
-                prob += coeff_clustering * (clustering - 0.5)
-                prob += coeff_matched * (normalized_matched - 0.5)
-                prob += coeff_round * (node_context.round_number / 100.0 - 0.5)
-                prob += coeff_weight * (normalized_weight - 0.5)
-
-                return max(0.0, min(1.0, prob))
-
-            luby = LubyRandomizedMatching(
-                activation_probability=base_prob,
-                activation_function=activation_fn,
-            )
-
-            new_state, outgoing_messages = luby.node_behavior(
-                node_id=node_id,
-                node_state=current_state,
-                messages=incoming_messages,
-                context=context,
-            )
+        # Call node_behavior (works identically for all algorithms)
+        new_state, outgoing_messages = algo_instance.node_behavior(
+            node_id=node_id,
+            node_state=current_state,
+            messages=incoming_messages,
+            context=context,
+        )
 
         return new_state, outgoing_messages
 
     def _compute_round_statistics(self, graph: Any) -> Dict[str, float]:
-        """Compute global statistics for Luby activation function (once per algorithm run).
+        """Compute global statistics for adaptive activation function (once per algorithm run).
 
-       These are expensive O(n×d) computations that used to happen
+        These are expensive O(n×d) computations that used to happen
         inside activation_fn (called 1000+ times per cascade). Now computed once and cached.
 
         Args:
@@ -537,7 +462,7 @@ class UnifiedAlgorithmParameterizer(BaseParameterizer):
     def propose_to_neighbors(
         self, node_id: int, neighbors: List[int], context: Any
     ) -> Dict[int, float]:
-        """Get proposals to neighbors (local scope only).
+        """Get proposals to neighbors (100% generic, no hardcoded algorithm names).
 
         Args:
             node_id: This node's ID
@@ -547,31 +472,31 @@ class UnifiedAlgorithmParameterizer(BaseParameterizer):
         Returns:
             Dict[neighbor_id, weight] - proposals to send
         """
-        from src.algorithms.implementations.greedy_matching import GreedyMatching
-        from src.algorithms.implementations.itai_israeli import ItaiIsraeliMaximalMatching
-        from src.algorithms.implementations.luby_randomized import LubyRandomizedMatching
+        from src.meta.core.algorithm_registry import AlgorithmRegistry
+        from src.meta.core.algorithm_registry_builder import AlgorithmRegistryBuilder
 
-        if self.algorithm_type == "greedy":
-            greedy = GreedyMatching()
-            return greedy.propose_to_neighbors(node_id, neighbors, context)
+        # Get algorithm definition and class (100% generic)
+        registry = AlgorithmRegistry.instance()
+        algo_def = registry.get(self.algorithm_type)
+        if not algo_def:
+            return {}
 
-        elif self.algorithm_type == "itai":
-            timeout_rounds = getattr(context, "vector", None)
-            if timeout_rounds:
-                timeout_rounds = timeout_rounds.itai_timeout_rounds
-            else:
-                timeout_rounds = 5
-            itai = ItaiIsraeliMaximalMatching(timeout_rounds=timeout_rounds)
-            return itai.propose_to_neighbors(node_id, neighbors, context)
+        algo_class = AlgorithmRegistryBuilder.get_class(self.algorithm_type)
+        if not algo_class:
+            return {}
 
-        elif self.algorithm_type == "luby":
-            # Extract Luby base probability from canonical vector
-            vector = getattr(context, "vector", None)
-            base_prob = 0.5  # Default
+        # Extract parameters for this algorithm (dynamically, no hardcoding)
+        vector = getattr(context, "vector", None)
+        param_defs = algo_def.get("parameters", {})
+
+        params = {}
+        for param_name in param_defs.keys():
+            full_param_name = f"{self.algorithm_type}_{param_name}"
             if vector:
-                base_prob = vector.luby_base_probability
+                value = vector.get(full_param_name)
+                if value is not None:
+                    params[param_name] = value
 
-            luby = LubyRandomizedMatching(activation_probability=base_prob)
-            return luby.propose_to_neighbors(node_id, neighbors, context)
-
-        return {}
+        # Create algorithm and get proposals (works identically for all algorithms)
+        algo = algo_class(parameters=params if params else None)
+        return algo.propose_to_neighbors(node_id, neighbors, context)

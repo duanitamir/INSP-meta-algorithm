@@ -808,50 +808,57 @@
             {
                 id: 'ga-standard',
                 title: '🎯 GA Standard Flow',
-                description: 'Single-pass algorithm evaluation for each parameter vector',
+                description: 'Single-pass algorithm evaluation for each parameter vector. <strong style="color: var(--primary)">Agnostic to algorithm selection</strong> - adapts to any algorithm configuration automatically.',
                 steps: [
                     'Load graph',
-                    'Initialize GA',
-                    'For 10 generations: (1) Evaluate 20 vectors',
+                    'Initialize GA (CanonicalVector discovers available algorithms)',
+                    'Vector shape = base params (2) + all algorithm params',
+                    'For 10 generations: (1) Evaluate 20 vectors of discovered shape',
                     '(2) Run orchestrator once per vector',
-                    '(3) Compute fitness (standard mode)',
-                    '(4) Select elite, breed, mutate',
+                    '(3) Each algorithm extracts its own params from vector',
+                    '(4) Compute fitness (merge all algorithm results)',
+                    '(5) Select elite, breed, mutate',
                     'Export best parameters & fitness history'
                 ],
-                components: ['Graph Data', 'GA Optimizer', 'Fitness Evaluator', 'Orchestrator', 'Greedy', 'Itai-Israeli', 'Luby'],
+                components: ['Graph Data', 'Algorithm Registry', 'GA Optimizer', 'CanonicalVector', 'Fitness Evaluator', 'Orchestrator', 'All Selected Algorithms'],
                 timing: '~3 minutes per seed (200 vectors × 1s each)',
-                usecase: 'Fast feedback for parameter exploration'
+                usecase: 'Fast feedback for parameter exploration. Works with any algorithm subset (1, 2, or 3 algorithms).'
             },
             {
                 id: 'ga-cascading',
                 title: '💫 GA Cascading Flow',
-                description: 'Multi-pass algorithm evaluation with cascading refinement',
+                description: 'Multi-pass algorithm evaluation with cascading refinement. <strong style="color: var(--primary)">Configuration-agnostic</strong> - runs multiple cascades on shrinking graphs regardless of algorithm selection.',
                 steps: [
                     'Load graph',
+                    'Initialize GA (discover algorithms + vector shape)',
                     'Run GA Standard for 9 generations',
                     'For final generation: (1) Evaluate 10 elite vectors',
-                    '(2) Run orchestrator 3-5 times per vector (cascades)',
-                    '(3) Compute cumulative fitness',
-                    '(4) Export best vector with cascading metrics'
+                    '(2) Run cascading rounds on shrinking graphs',
+                    '   - Cascade 1: All algorithms on full graph',
+                    '   - Cascade 2+: All algorithms on remaining unmatched nodes',
+                    '(3) Each algorithm extracts params, finds matches on shrinking graph',
+                    '(4) Compute cumulative fitness (sum across all cascades)',
+                    '(5) Export best vector with cascading metrics'
                 ],
-                components: ['Graph Data', 'GA Optimizer', 'Cascading Evaluator', 'Orchestrator', 'Greedy', 'Itai-Israeli', 'Luby'],
+                components: ['Graph Data', 'Algorithm Registry', 'GA Optimizer', 'Cascading Evaluator', 'All Selected Algorithms'],
                 timing: '~4 minutes per seed (9 gens × 20 + final × 5s per vector)',
-                usecase: 'High-quality optimization for final validation'
+                usecase: 'High-quality optimization. Works with any algorithm combination - each algorithm adapts to cascading automatically.'
             },
             {
                 id: 'baseline-computation',
                 title: '📏 Baseline Computation',
-                description: 'Single evaluation to establish performance baseline',
+                description: 'Single evaluation to establish performance baseline. <strong style="color: var(--primary)">Uses selected algorithms</strong> - baseline adapts to current algorithm configuration.',
                 steps: [
                     'Load graph',
-                    'Use default parameters',
-                    'Run orchestrator once',
-                    'Compute baseline fitness',
-                    'Store for comparison against GA results'
+                    'Create default CanonicalVector (random values within bounds)',
+                    'Run FitnessEvaluator (calls all selected algorithms)',
+                    'Baseline = merged result from all algorithms in registry',
+                    'Store for comparison against GA results',
+                    'Supports any algorithm combination (1, 2, or 3 algorithms)'
                 ],
-                components: ['Graph Data', 'Fitness Evaluator', 'Orchestrator', 'Greedy', 'Itai-Israeli', 'Luby'],
+                components: ['Graph Data', 'Algorithm Registry', 'CanonicalVector', 'Fitness Evaluator', 'All Selected Algorithms'],
                 timing: '~1 second per seed',
-                usecase: 'Reference point for GA improvement calculation'
+                usecase: 'Reference point for GA improvement calculation. Changes automatically if algorithm configuration changes.'
             },
             {
                 id: 'result-export',
@@ -1562,6 +1569,36 @@
             let html = '<div style="margin-bottom: 2rem">';
             html += '<h2 style="margin-bottom: 0.5rem; color: var(--text-primary)">🔄 System Flows & Pipelines</h2>';
             html += '<p style="color: var(--text-secondary); margin-bottom: 2rem; font-size: 0.95rem">Interactive flow diagrams showing how components interact. Click on any component to see details.</p>';
+
+            // Agnostic Architecture Section
+            html += `<div style="background: linear-gradient(135deg, rgba(102,126,234,0.08) 0%, rgba(106,163,255,0.08) 100%); border: 2px solid rgba(102,126,234,0.2); border-radius: 8px; padding: 1.5rem; margin-bottom: 2rem">
+                <h3 style="color: var(--primary); margin: 0 0 1rem 0; font-size: 1.1rem; font-weight: 600">🔌 100% Agnostic Architecture</h3>
+                <p style="color: var(--text-secondary); margin: 0 0 1rem 0; font-size: 0.95rem; line-height: 1.6">
+                    <strong>Core Principle:</strong> The system is completely agnostic to algorithm selection and configuration:
+                </p>
+                <div style="display: grid; gap: 0.8rem; margin-top: 1rem">
+                    <div style="padding: 0.8rem; background: rgba(255,255,255,0.5); border-left: 3px solid var(--primary); border-radius: 4px">
+                        <strong style="color: var(--text-primary)">🧬 Algorithm Agnosticism:</strong>
+                        <p style="color: var(--text-secondary); font-size: 0.9rem; margin: 0.3rem 0 0 0">Not tied to Greedy, Itai, or Luby. Use any combination, add new algorithms - system adapts automatically. Each algorithm is self-contained with its own PARAMETER_DEFINITION.</p>
+                    </div>
+                    <div style="padding: 0.8rem; background: rgba(255,255,255,0.5); border-left: 3px solid var(--primary); border-radius: 4px">
+                        <strong style="color: var(--text-primary)">📦 Vector Shape Adapts:</strong>
+                        <p style="color: var(--text-secondary); font-size: 0.9rem; margin: 0.3rem 0 0 0">Vector dimensions change based on selected algorithms. 3 algorithms = 12 params. 2 algorithms = 7 params. Configuration drives vector shape dynamically.</p>
+                    </div>
+                    <div style="padding: 0.8rem; background: rgba(255,255,255,0.5); border-left: 3px solid var(--primary); border-radius: 4px">
+                        <strong style="color: var(--text-primary)">🎯 Semantically Agnostic Vector:</strong>
+                        <p style="color: var(--text-secondary); font-size: 0.9rem; margin: 0.3rem 0 0 0">Vector doesn't know what greedy_max_rounds or luby_coeff_degree mean. It only stores/retrieves parameters by name. Algorithm semantics hidden from vector.</p>
+                    </div>
+                    <div style="padding: 0.8rem; background: rgba(255,255,255,0.5); border-left: 3px solid var(--primary); border-radius: 4px">
+                        <strong style="color: var(--text-primary)">🔄 Self-Extracting Algorithms:</strong>
+                        <p style="color: var(--text-secondary); font-size: 0.9rem; margin: 0.3rem 0 0 0">Each algorithm extracts only its own parameters from the vector. Fitness evaluator passes same vector to all algorithms - each knows what to take.</p>
+                    </div>
+                    <div style="padding: 0.8rem; background: rgba(255,255,255,0.5); border-left: 3px solid var(--primary); border-radius: 4px">
+                        <strong style="color: var(--text-primary)">➕ Easy Extension:</strong>
+                        <p style="color: var(--text-secondary); font-size: 0.9rem; margin: 0.3rem 0 0 0">Add a new algorithm? Just implement PARAMETER_DEFINITION. No changes to CanonicalVector, GA, FitnessEvaluator, or any system component.</p>
+                    </div>
+                </div>
+            </div>`;
 
             // Flow selection tabs
             html += '<div style="display: flex; gap: 0.5rem; margin-bottom: 2rem; border-bottom: 2px solid var(--border); padding-bottom: 1rem">';

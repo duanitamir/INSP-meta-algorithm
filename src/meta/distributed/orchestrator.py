@@ -31,35 +31,43 @@ class DistributedOrchestrator:
     Distributed: State, algorithm execution, decision-making.
     """
 
-    def __init__(self, max_workers: int = 4) -> None:
+    def __init__(self, max_workers: int = 4, use_convergence_detection: bool = False, min_iterations: int = 0) -> None:
         """Initialize orchestrator as supervisor.
 
         Args:
             max_workers: Number of concurrent worker threads for parallel node execution
+            use_convergence_detection: If True, use convergence detector for early termination
+                                      (good for autonomous networks, bad for GA optimization)
+            min_iterations: Minimum iterations before allowing early termination (for synchronization)
         """
         self.executor = ParallelNodeExecutor(max_workers=max_workers)
+        self.use_convergence_detection = use_convergence_detection
+        self.min_iterations = min_iterations
 
     def execute(
         self,
         graph: GraphManager,
         canonical_vector: CanonicalVector,
-        parameterizers: List = None,  # Nodes create their own parameterizers
+        parameterizers: List = None,  # Ignored (nodes create their own)
         pre_matched_nodes: set = None,  # Nodes already matched in previous cascades
+        algorithm_to_run: str = None,  # If specified, run ONLY this algorithm (for independent execution)
     ) -> Tuple[Dict[int, int], Dict]:
-        """Execute matching using autonomous distributed nodes (Phase 5 simplification).
+        """Execute matching using autonomous distributed nodes.
 
-        Pure round scheduler: Creates nodes, runs rounds, delivers messages, collects results.
-        All decision logic moved to nodes. Orchestrator is stateless.
+        Can run in two modes:
+        1. algorithm_to_run=None: Run all algorithms simultaneously (default)
+        2. algorithm_to_run=<name>: Run single algorithm independently (used for merge-based approach)
 
         Args:
             graph: Shared read-only graph
             canonical_vector: Shared immutable parameter chromosome
             parameterizers: Ignored (nodes create their own)
             pre_matched_nodes: Set of node IDs already matched in previous cascades (optional)
+            algorithm_to_run: If specified, nodes only run this algorithm (for independent execution + merge)
 
         Returns:
             Tuple of:
-            - Dict[int, int]: Final matching from nodes (nodes handle symmetry)
+            - Dict[int, int]: Final matching from nodes
             - dict: Metrics with keys:
               - iterations: int, number of rounds executed
               - final_weight: float, sum of matched edge weights
@@ -68,14 +76,16 @@ class DistributedOrchestrator:
         if not is_valid:
             raise ValueError(f"Invalid canonical vector: {error}")
 
-        # Initialize convergence detector for distributed voting
-        convergence_detector = DistributedConvergenceDetector(
-            convergence_threshold=0.05,
-            quorum_threshold=0.5,
-            gossip_frequency=1,
-            max_iterations=int(canonical_vector.max_iterations),
-        )
-        convergence_detector.initialize(graph.vertices())
+        # Initialize convergence detector if enabled (disabled by default for GA)
+        convergence_detector = None
+        if self.use_convergence_detection:
+            convergence_detector = DistributedConvergenceDetector(
+                convergence_threshold=0.05,
+                quorum_threshold=0.5,
+                gossip_frequency=1,
+                max_iterations=int(canonical_vector.get("max_iterations") or 100),
+            )
+            convergence_detector.initialize(graph.vertices())
 
         # Create algorithm config from canonical vector (distributed to all nodes)
         algorithm_config = DistributedAlgorithmConfig.from_canonical_vector(canonical_vector)
@@ -86,7 +96,8 @@ class DistributedOrchestrator:
 
         for node_id in graph.vertices():
             node = DistributedNode(node_id, graph, algorithm_config=algorithm_config)
-            node.convergence_detector = convergence_detector
+            if convergence_detector is not None:
+                node.convergence_detector = convergence_detector
 
             # For cascading: mark already-matched nodes as finished
             if node_id in pre_matched_nodes:
@@ -94,7 +105,7 @@ class DistributedOrchestrator:
 
             nodes[node_id] = node
 
-        max_iterations = int(canonical_vector.max_iterations)
+        max_iterations = int(canonical_vector.get("max_iterations") or 100)
         iteration = 0
 
         # Parallel node xecution + pure round scheduler loop
@@ -111,13 +122,16 @@ class DistributedOrchestrator:
             # Deliver messages between nodes (includes config gossip messages)
             self._deliver_all_messages(nodes)
 
-            # Check termination: quorum voting or all nodes inactive
-            stop_votes = sum(1 for node in nodes.values() if node.convergence_vote is True)
-            if len(nodes) > 0 and (stop_votes / len(nodes)) > 0.5:
-                break
+            # Check termination: only allow after min_iterations for synchronization
+            if iteration >= self.min_iterations:
+                # Quorum voting for convergence
+                stop_votes = sum(1 for node in nodes.values() if node.convergence_vote is True)
+                if len(nodes) > 0 and (stop_votes / len(nodes)) > 0.5:
+                    break
 
-            if not any(all_continue):
-                break
+                # All nodes inactive
+                if not any(all_continue):
+                    break
 
             iteration += 1
 
@@ -159,19 +173,38 @@ class DistributedOrchestrator:
     ) -> Tuple[Dict[int, int], float]:
         """Collect final matching from all nodes.
 
-        Nodes handle symmetric matching via endpoint voting in Phase 4.
-        Orchestrator just gathers results.
+        Validates symmetric matching: only include edges where BOTH nodes
+        agree they're matched to each other.
 
         Args:
             nodes: Dict of node_id -> DistributedNode
             graph: GraphManager for weight calculation
 
         Returns:
-            Tuple of (matching dict, final weight)
+            Tuple of (matching dict in canonical form, final weight)
         """
-        final_matching: Dict[int, int] = {}
+        # Collect node->neighbor mappings
+        node_matching = {}
         for node in nodes.values():
-            final_matching.update(node.get_matching())
+            node_id = node.id
+            local_match = node.get_matching()
+            if local_match and node_id in local_match:
+                node_matching[node_id] = local_match[node_id]
+
+        # Build final matching: only include edges both nodes agree on
+        final_matching: Dict[int, int] = {}
+        edges_added = set()
+
+        for node_id, matched_to in node_matching.items():
+            # Check if the other node also reports the same match
+            if matched_to in node_matching and node_matching[matched_to] == node_id:
+                # Both nodes agree on this edge - add in canonical form
+                smaller, larger = min(node_id, matched_to), max(node_id, matched_to)
+                pair = (smaller, larger)
+
+                if pair not in edges_added:
+                    edges_added.add(pair)
+                    final_matching[smaller] = larger
 
         final_weight = graph.calculate_matching_weight(final_matching)
         return final_matching, final_weight

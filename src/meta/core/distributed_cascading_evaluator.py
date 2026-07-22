@@ -1,36 +1,49 @@
-"""Cascading fitness evaluator for GA optimization.
+"""Cascading fitness evaluator using fully distributed orchestration.
 
-Implements cascading rounds on shrinking graphs using 3 centralized algorithms.
-Each cascade runs all 3 algorithms on progressively smaller graphs where matched
-nodes are removed between passes, accumulating matches across cascades.
+Implements cascading rounds on shrinking graphs using DistributedOrchestrator.
+Each cascade runs each algorithm independently on autonomous nodes, then merges results.
+Matched nodes are removed between passes, accumulating matches across cascades.
 """
 
 from src.graph.graph_manager import GraphManager
 from src.meta.core.canonical_vector import CanonicalVector
+from src.meta.distributed.orchestrator import DistributedOrchestrator
 
 
 class DistributedCascadingEvaluator:
-    """Evaluates fitness using cascading rounds with 3 algorithms on shrinking graphs.
+    """Evaluates fitness using cascading rounds with autonomous distributed nodes.
 
     For each cascade round:
     1. Create filtered graph with only unmatched nodes
-    2. Run all 3 algorithms independently (Greedy, Itai, Luby)
-    3. Merge outputs via conflict resolution
-    4. Mark matched nodes as inactive for next cascade
-    5. Check convergence (improvement < threshold)
-    6. Continue if improvement sufficient, else stop
+    2. Run DistributedOrchestrator with autonomous nodes on filtered graph
+    3. Nodes execute all algorithms (Greedy, Itai, Luby) independently
+    4. Nodes resolve conflicts via endpoint voting
+    5. Collect matching from autonomous nodes
+    6. Mark matched nodes as inactive for next cascade
+    7. Check convergence (improvement < threshold)
+    8. Continue if improvement sufficient, else stop
 
-    Each algorithm gets fresh access to nodes in the current cascade,
-    producing different matchings that merge together for better results.
+    Each cascade runs fully distributed - nodes make autonomous decisions,
+    exchange proposals via messages, resolve conflicts via voting.
     """
 
-    def __init__(self) -> None:
-        """Initialize cascading evaluator."""
+    def __init__(self, max_workers: int = 4, min_rounds: int = 10) -> None:
+        """Initialize cascading evaluator.
+
+        Args:
+            max_workers: Number of worker threads for parallel node execution
+            min_rounds: Minimum iterations before allowing early termination
+        """
+        self.max_workers = max_workers
+        self.min_rounds = min_rounds  # Ensure enough rounds for synchronization
         self.last_num_cascades = 0
         self.last_weights_per_cascade = []
 
     def evaluate(self, graph: GraphManager, vector: CanonicalVector) -> float:
-        """Evaluate fitness using cascading rounds on shrinking graphs.
+        """Evaluate fitness using cascading rounds with standard algorithms.
+
+        Uses the same algorithm execution as standard evaluator, but runs repeatedly
+        on a shrinking graph where matched nodes are removed between passes.
 
         Compatible with FitnessEvaluator interface - returns just the fitness weight.
         Cascading details stored in self.last_num_cascades and self.last_weights_per_cascade.
@@ -46,13 +59,9 @@ class DistributedCascadingEvaluator:
         if not is_valid:
             raise ValueError(f"Invalid vector: {error}")
 
-        from src.meta.parameterizers.algorithm_parameterizer import UnifiedAlgorithmParameterizer
-        from src.meta.core.matching_merger import merge_matchings
-        from src.state.store import StateStore
-
-        # Get parameters from vector
-        max_cascades = int(vector.max_iterations)
-        convergence_threshold = vector.convergence_threshold
+        # Get parameters from vector using generic .get() method (100% agnostic)
+        max_cascades = int(vector.get("max_iterations") or 100)
+        convergence_threshold = vector.get("convergence_threshold") or 0.05
 
         # Initialize matched nodes tracking
         already_matched_nodes = set()
@@ -62,7 +71,7 @@ class DistributedCascadingEvaluator:
         cascade_round = 0
         total_weight = 0.0  # Accumulate weight across ALL cascades
 
-        # Cascading rounds
+        # Cascading rounds using distributed orchestrator (each algo independent, then merge)
         for cascade_round in range(max_cascades):
             # If no unmatched nodes remain, stop cascading
             unmatched_nodes = set(graph.vertices()) - already_matched_nodes
@@ -70,34 +79,21 @@ class DistributedCascadingEvaluator:
                 break
 
             # Create filtered graph with only unmatched nodes
-            # This ensures algorithms only work on the shrinking graph
             cascade_graph = self._create_filtered_graph(graph, already_matched_nodes)
 
-            # Run all 3 algorithms and merge their results
-            # CRITICAL: Create fresh StateStore for EACH algorithm
-            # If we reuse one StateStore, Greedy's matches mark all nodes as matched,
-            # and then Itai/Luby see an empty graph and return the same Greedy matching!
-            parameterizers = [
-                UnifiedAlgorithmParameterizer("greedy"),
-                UnifiedAlgorithmParameterizer("itai"),
-                UnifiedAlgorithmParameterizer("luby"),
-            ]
+            # Run distributed orchestrator on filtered graph
+            orchestrator = DistributedOrchestrator(
+                max_workers=self.max_workers,
+                use_convergence_detection=False,
+                min_iterations=self.min_rounds
+            )
 
-            matchings = []
-            for parameterizer in parameterizers:
-                try:
-                    matching = parameterizer.execute(cascade_graph, vector)
-                    matchings.append(matching)
-                except Exception:
-                    pass
-
-            # Merge all matchings via conflict resolution
-            merged_matching = merge_matchings(matchings, cascade_graph)
+            matching, _ = orchestrator.execute(cascade_graph, vector)
 
             # Calculate weight for THIS CASCADE (new matches found on filtered graph)
             curr_weight = 0.0
-            if merged_matching:
-                for u, v in merged_matching.items():
+            if matching:
+                for u, v in matching.items():
                     if u < v:  # Count each edge once
                         curr_weight += graph.get_edge_weight(u, v)
 
@@ -112,7 +108,7 @@ class DistributedCascadingEvaluator:
                     break
 
             # Update matched nodes for next cascade
-            for u, v in merged_matching.items():
+            for u, v in matching.items():
                 already_matched_nodes.add(u)
                 already_matched_nodes.add(v)
 
