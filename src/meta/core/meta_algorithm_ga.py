@@ -2,7 +2,7 @@
 
 import random
 from concurrent.futures import ThreadPoolExecutor
-from typing import List, NamedTuple, Tuple
+from typing import List, NamedTuple, Tuple, Optional
 
 from src.graph.graph_manager import GraphManager
 from src.meta.core.canonical_vector import CanonicalVector
@@ -37,6 +37,7 @@ class MetaAlgorithmGA:
         early_stop_generations: int = 10,
         num_workers: int = 4,
         use_cascading: bool = False,
+        algorithms: Optional[List] = None,
     ) -> None:
         """Initialize genetic algorithm.
 
@@ -50,7 +51,10 @@ class MetaAlgorithmGA:
             num_workers: Number of parallel workers for evaluation
             use_cascading: If True, use cascading evaluator (multi-pass on shrinking graphs)
                           If False, use standard evaluator (single pass on full graph)
+            algorithms: Optional list of Algorithms enum values to optimize for
         """
+        self.algorithms = algorithms
+
         if fitness_evaluator is None:
             # Create evaluator based on cascading flag
             # Both modes use DistributedOrchestrator (100% distributed)
@@ -82,19 +86,13 @@ class MetaAlgorithmGA:
             - List[float]: Best fitness per generation
         """
         # Initialize population with baseline vector + random vectors
-        # Baseline uses standard algorithm defaults (no adaptive coefficients)
-        baseline_vector = CanonicalVector(
-            luby_base_probability=0.5,
-            luby_coeff_degree=0.0,
-            luby_coeff_neighbors_unmatched=0.0,
-            luby_coeff_clustering=0.0,
-            luby_coeff_matched=0.0,
-            luby_coeff_round=0.0,
-            luby_coeff_weight=0.0,
-            itai_timeout_rounds=5,
-            max_iterations=10,
-            convergence_threshold=0.05,
-        )
+        # Baseline is the default CanonicalVector (which represents optimal defaults)
+        baseline_vector = CanonicalVector()
+
+        # Evaluate baseline to get true fitness on this graph
+        baseline_fitness = self.fitness_evaluator.evaluate(graph, baseline_vector)
+
+        # Create initial population: baseline + diverse random vectors
         population = [baseline_vector] + [CanonicalVector() for _ in range(self.population_size - 1)]
 
         best_vector = population[0]

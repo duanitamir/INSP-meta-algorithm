@@ -61,7 +61,6 @@ class DistributedCascadingEvaluator:
 
         # Get parameters from vector using generic .get() method (100% agnostic)
         max_cascades = int(vector.get("max_iterations") or 100)
-        convergence_threshold = vector.get("convergence_threshold") or 0.05
 
         # Initialize matched nodes tracking
         already_matched_nodes = set()
@@ -100,12 +99,12 @@ class DistributedCascadingEvaluator:
             weight_per_round.append(curr_weight)
             total_weight += curr_weight  # Accumulate across cascades
 
-            # Check convergence
-            if cascade_round > 0:
-                improvement = (curr_weight - prev_weight) / (prev_weight + 1e-10)
-                if improvement < convergence_threshold:
-                    # Convergence reached, stop cascading
-                    break
+            # Check convergence: stop only if NO matches found (curr_weight == 0)
+            # Continue cascading even if this cascade finds fewer matches than the previous one
+            # because remaining unmatched nodes may still find matches
+            if curr_weight == 0:
+                # No matches found in this cascade, we're done
+                break
 
             # Update matched nodes for next cascade
             for u, v in matching.items():
