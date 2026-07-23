@@ -1,17 +1,13 @@
-"""Distributed protocol messages for Phase 3 system.
+"""Gossip protocol messages for distributed communication.
 
 Contains:
-- DistributedMessage: Abstract base class for all distributed messages
-- ParameterGossipMessage: Messages for parameter gossip (GA evolution)
-- ConvergenceGossipMessage: Messages for convergence voting (termination)
+- GossipMessage: Unified message for config, convergence, and parameter communication
+  - Uses message_subtype to route different payload types
+  - Includes built-in validation for round_num and weight
 """
 
-from .base import DistributedMessage
-from .parameter_gossip import ParameterGossipMessage
-from .convergence_gossip import ConvergenceGossipMessage
+from .gossip_message import GossipMessage
 
 __all__ = [
-    "DistributedMessage",
-    "ParameterGossipMessage",
-    "ConvergenceGossipMessage",
+    "GossipMessage",
 ]

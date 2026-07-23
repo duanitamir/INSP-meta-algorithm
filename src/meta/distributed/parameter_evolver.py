@@ -4,7 +4,7 @@ import random
 from typing import Dict, List, Tuple
 from src.graph.graph_manager import GraphManager
 from src.meta.core.canonical_vector import CanonicalVector
-from src.meta.messages.parameter_gossip import ParameterGossipMessage
+from src.meta.messages.gossip_message import GossipMessage
 from src.state.node_parameter_state import NodeParameterState
 from src.communication.message import Message
 from src.communication.message_queue import MessageQueue
@@ -149,7 +149,7 @@ class DistributedParameterEvolver:
 
     def create_gossip_message(
         self, node_id: int, graph: GraphManager
-    ) -> ParameterGossipMessage | None:
+    ) -> GossipMessage | None:
         """Create gossip message with elite vectors.
 
         Args:
@@ -157,7 +157,7 @@ class DistributedParameterEvolver:
             graph: Graph (used to find neighbors)
 
         Returns:
-            ParameterGossipMessage or None if no elite to share
+            GossipMessage with subtype="parameter" or None if no elite to share
         """
         state = self.get_node_state(node_id)
 
@@ -169,8 +169,8 @@ class DistributedParameterEvolver:
         # Get fitness values
         fitness_vals = [state.fitness.get(id(v), 0.0) for v in elite]
 
-        # Create message
-        msg = ParameterGossipMessage(
+        # Create message using GossipMessage factory
+        msg = GossipMessage.parameter_gossip(
             sender_node_id=node_id,
             elite_vectors=elite,
             fitness_values=fitness_vals,
@@ -227,13 +227,13 @@ class DistributedParameterEvolver:
         return len(target_neighbors)
 
     def receive_and_integrate_gossip(
-        self, node_id: int, gossip_messages: List[ParameterGossipMessage]
+        self, node_id: int, gossip_messages: List[GossipMessage]
     ) -> int:
         """Receive gossip from neighbors and integrate into population.
 
         Args:
             node_id: Node receiving gossip
-            gossip_messages: List of ParameterGossipMessage received
+            gossip_messages: List of GossipMessage with subtype="parameter" received
 
         Returns:
             Number of new vectors integrated

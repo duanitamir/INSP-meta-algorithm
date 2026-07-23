@@ -2,7 +2,7 @@
 
 from typing import Dict, List
 
-from src.meta.messages.convergence_gossip import ConvergenceGossipMessage
+from src.meta.messages.gossip_message import GossipMessage
 from src.state.convergence_state import ConvergenceState
 
 
@@ -74,7 +74,7 @@ class DistributedConvergenceDetector:
         state.update_weights(prev_weight, curr_weight)
         state.decide_convergence(self.convergence_threshold)
 
-    def create_convergence_message(self, node_id: int, round_num: int) -> ConvergenceGossipMessage:
+    def create_convergence_message(self, node_id: int, round_num: int) -> GossipMessage:
         """Create a convergence gossip message from node's decision.
 
         Args:
@@ -82,10 +82,10 @@ class DistributedConvergenceDetector:
             round_num: Current algorithm round
 
         Returns:
-            ConvergenceGossipMessage with this node's vote
+            GossipMessage with subtype="convergence" and this node's vote
         """
         state = self.node_states[node_id]
-        return ConvergenceGossipMessage(
+        return GossipMessage.convergence_gossip(
             sender_node_id=node_id,
             should_stop=state.should_stop,
             round_num=round_num,
@@ -94,7 +94,7 @@ class DistributedConvergenceDetector:
 
     def broadcast_convergence_votes(
         self, node_id: int, round_num: int
-    ) -> List[ConvergenceGossipMessage]:
+    ) -> List[GossipMessage]:
         """Generate convergence messages for broadcasting.
 
         Args:
@@ -102,19 +102,19 @@ class DistributedConvergenceDetector:
             round_num: Current round number
 
         Returns:
-            List of ConvergenceGossipMessage to broadcast to neighbors
+            List of GossipMessage with subtype="convergence" to broadcast to neighbors
         """
         msg = self.create_convergence_message(node_id, round_num)
         return [msg]
 
     def receive_convergence_votes(
-        self, node_id: int, messages: List[ConvergenceGossipMessage]
+        self, node_id: int, messages: List[GossipMessage]
     ) -> None:
         """Process received convergence messages.
 
         Args:
             node_id: Node receiving votes
-            messages: List of ConvergenceGossipMessage from other nodes
+            messages: List of GossipMessage with subtype="convergence" from other nodes
         """
         state = self.node_states[node_id]
 

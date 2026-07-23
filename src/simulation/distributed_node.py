@@ -9,7 +9,7 @@ from src.graph.graph_manager import GraphManager
 from src.graph.local_graph import LocalGraph
 from src.metrics.metrics_collector import MetricsCollector
 from src.config import DistributedAlgorithmConfig
-from src.meta.messages.config_gossip_message import ConfigGossipMessage
+from src.meta.messages.gossip_message import GossipMessage
 
 
 class DistributedNode:
@@ -201,30 +201,40 @@ class DistributedNode:
         """Learn about other nodes' convergence decisions and configs from messages.
 
         Processes:
-        - CONVERGENCE_VOTE: Other nodes' convergence decisions
-        - CONFIG_GOSSIP: Algorithm configuration from neighbors
+        - GossipMessage with subtype="config": Algorithm configuration from neighbors
+        - Generic messages with type="CONVERGENCE_VOTE": Other nodes' convergence decisions
 
         Args:
             messages: All messages received this round
         """
-        from src.meta.messages.convergence_gossip import ConvergenceGossipMessage
-
         convergence_msgs = []
 
         for msg in messages:
-            # Handle config gossip messages
-            if isinstance(msg, ConfigGossipMessage):
-                self.receive_config_gossip(msg)
-                continue
+            # Handle generic gossip messages by subtype
+            if isinstance(msg, GossipMessage):
+                # Route by message subtype
+                if msg.message_subtype == "config":
+                    self.receive_config_gossip(msg)
+                    continue
+                elif msg.message_subtype == "convergence":
+                    # Create convergence message for detector
+                    conv_msg = GossipMessage.convergence_gossip(
+                        sender_node_id=msg.sender_node_id,
+                        should_stop=msg.payload.get("should_stop", False),
+                        round_num=msg.round_num,
+                        weight=msg.weight,
+                    )
+                    convergence_msgs.append(conv_msg)
+                    continue
 
-            # Handle convergence votes
+            # Handle legacy generic messages with type payload
             if msg.payload.get("type") == "CONVERGENCE_VOTE":
                 sender_id = msg.sender
                 vote = msg.payload.get("vote", False)
                 self.known_convergence_votes[sender_id] = vote
 
-                # Create ConvergenceGossipMessage for detector
-                conv_msg = ConvergenceGossipMessage(
+                # Create GossipMessage for detector
+                conv_msg = GossipMessage.convergence_gossip(
                     sender_node_id=sender_id,
                     should_stop=msg.payload.get("should_stop", vote),
                     round_num=msg.payload.get("round", self.round_number),
@@ -436,19 +446,17 @@ class DistributedNode:
         if not neighbors:
             return
 
-        # Create config message (includes algorithm list - Phase 8 - NEW)
-        from src.meta.core.algorithm_registry import AlgorithmRegistry
-        registry = AlgorithmRegistry.instance()
-        available_algos = self.algorithm_config.available_algorithms or registry.all_algorithm_names()
+        # Create config message payload with algorithm list metadata
+        payload = self.algorithm_config.to_dict()
+        payload["available_algorithms"] = self.algorithm_config.available_algorithms
+        payload["algorithm_list_version"] = self.algorithm_config.algorithm_list_version
 
-        msg = ConfigGossipMessage(
-            sender=self.id,
-            recipient=-1,  # Will be set per-neighbor
-            payload=self.algorithm_config.to_dict(),
-            available_algorithms=available_algos,
+        # Create GossipMessage (for protocol abstraction)
+        generic_msg = GossipMessage.config_gossip(
+            sender_node_id=self.id,
+            payload=payload,
             version=self.algorithm_config.version,
-            algorithm_list_version=self.algorithm_config.algorithm_list_version,
-            round_num=self.round_number
+            round_num=self.round_number,
         )
 
         # Sample up to 3 neighbors to avoid flooding
@@ -456,35 +464,34 @@ class DistributedNode:
         sample_size = min(3, len(neighbors))
         sampled_neighbors = random.sample(neighbors, sample_size)
 
-        # Send to sampled neighbors
+        # Send to sampled neighbors via Message wrapper (for MessageQueue compatibility)
         for neighbor in sampled_neighbors:
-            neighbor_msg = ConfigGossipMessage(
+            msg = Message(
                 sender=self.id,
                 recipient=neighbor,
-                payload=msg.payload.copy(),
-                available_algorithms=msg.available_algorithms,
-                version=msg.version,
-                algorithm_list_version=msg.algorithm_list_version,
-                round_num=self.round_number
+                payload=generic_msg.payload,  # Use GossipMessage payload
+                round_num=self.round_number,
             )
-            self.outbox.send(neighbor_msg)
+            self.outbox.send(msg)
 
-    def receive_config_gossip(self, msg: ConfigGossipMessage) -> None:
+    def receive_config_gossip(self, msg: GossipMessage) -> None:
         """Receive and potentially adopt algorithm configuration from neighbor.
 
         Only accepts configuration if version > current version (version-based ordering).
 
         Args:
-            msg: ConfigGossipMessage with algorithm configuration
+            msg: GossipMessage with subtype="config" and algorithm configuration
         """
-        if msg.version > self.algorithm_config.version:
+        if msg.message_version > self.algorithm_config.version:
             # Adopt this configuration
             self.algorithm_config = DistributedAlgorithmConfig.from_dict(msg.payload)
-            self.algorithm_config.version = msg.version
+            self.algorithm_config.version = msg.message_version
 
-            # Update algorithm list if neighbor has newer version
-            if msg.algorithm_list_version > self.algorithm_config.algorithm_list_version:
-                new_algos = msg.available_algorithms or []
-                if new_algos != self.algorithm_config.available_algorithms:
+            # Update algorithm list if neighbor has newer list version (in payload)
+            # Note: GossipMessage stores algorithm list version in payload if available
+            new_list_version = msg.payload.get("algorithm_list_version", self.algorithm_config.algorithm_list_version)
+            if new_list_version > self.algorithm_config.algorithm_list_version:
+                new_algos = msg.payload.get("available_algorithms", [])
+                if new_algos and new_algos != self.algorithm_config.available_algorithms:
                     self.algorithm_config.available_algorithms = new_algos.copy()
-                    self.algorithm_config.algorithm_list_version = msg.algorithm_list_version
+                    self.algorithm_config.algorithm_list_version = new_list_version
