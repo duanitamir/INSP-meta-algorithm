@@ -14,7 +14,6 @@ class ConvergenceState:
         self.curr_weight = 0.0
         self.should_stop = False
         self.iteration = 0
-        self.iteration_count = 0  # Alias for compatibility
         self.convergence_votes: Dict[int, bool] = {}  # node_id -> should_stop vote
 
     def update_weights(self, prev_weight: float, curr_weight: float) -> None:
@@ -30,13 +29,11 @@ class ConvergenceState:
             improvement = 1.0 if self.curr_weight > 0 else 0.0
 
         self.should_stop = improvement < convergence_threshold
-        self.iteration += 1
-        self.iteration_count += 1  # Keep both in sync
+        self.iteration += 1  # Keep both in sync
 
     def increment_iteration(self) -> None:
         """Increment iteration counter."""
         self.iteration += 1
-        self.iteration_count += 1
 
     def add_convergence_vote(self, node_id: int, should_stop: bool) -> None:
         """Record convergence vote from another node.
