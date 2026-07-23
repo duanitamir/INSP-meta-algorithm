@@ -1,4 +1,4 @@
-from typing import Dict, List, Any
+from typing import Dict, Any
 from dataclasses import dataclass
 from threading import RLock
 from src.graph.graph_manager import GraphManager
@@ -41,27 +41,6 @@ class MetaState:
         )
 
 
-@dataclass
-class StateSnapshot:
-    """Immutable snapshot of all state at a specific round."""
-
-    round_num: RoundNumber
-    node_states: Dict[int, NodeState]
-    meta_state: MetaState
-
-    def get_node_state(self, node_id: int) -> NodeState:
-        """Get state for a node."""
-        return self.node_states[node_id].clone()
-
-    def get_all_node_states(self) -> Dict[int, NodeState]:
-        """Get all node states (defensive copy)."""
-        return {vid: state.clone() for vid, state in self.node_states.items()}
-
-    def get_meta_state(self) -> MetaState:
-        """Get global state."""
-        return self.meta_state
-
-
 class StateStore:
     """Central repository for all node states (thread-safe with per-node locks)."""
 
@@ -69,7 +48,6 @@ class StateStore:
         self.graph = graph
         self._node_states: Dict[int, NodeState] = {}
         self._meta_state = MetaState(round_num=RoundNumber(0))
-        self._snapshots: List[StateSnapshot] = []
 
         # Fine-grained per-node locks for thread-safe parallel execution (Option 2)
         self._node_locks: Dict[int, RLock] = {}
@@ -154,21 +132,3 @@ class StateStore:
         """Update global simulation state."""
         self._meta_state = meta_state
 
-    def create_snapshot(self, round_num: RoundNumber) -> StateSnapshot:
-        """Create immutable snapshot of current state."""
-        snapshot = StateSnapshot(
-            round_num=round_num,
-            node_states={vid: state.clone() for vid, state in self._node_states.items()},
-            meta_state=self._meta_state,
-        )
-        self._snapshots.append(snapshot)
-        return snapshot
-
-    def restore_snapshot(self, snapshot: StateSnapshot) -> None:
-        """Restore state store to a previous snapshot."""
-        self._node_states = {vid: state.clone() for vid, state in snapshot.node_states.items()}
-        self._meta_state = snapshot.meta_state
-
-    def get_snapshots(self) -> List[StateSnapshot]:
-        """Get all saved snapshots."""
-        return self._snapshots.copy()

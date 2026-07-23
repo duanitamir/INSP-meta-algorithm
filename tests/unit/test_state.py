@@ -97,29 +97,6 @@ class TestStateStore:
         all_states = store.get_all_states()
         assert len(all_states) == simple_graph.num_vertices()
 
-    def test_create_snapshot(self, simple_graph):
-        store = StateStore(simple_graph)
-        state = store.get_node_state(1)
-        state.set("data", "test")
-        store.update_node_state(1, state)
-        snapshot = store.create_snapshot(RoundNumber(0))
-        assert snapshot.round_num == RoundNumber(0)
-
-    def test_restore_snapshot(self, simple_graph):
-        store = StateStore(simple_graph)
-        state1 = store.get_node_state(1)
-        state1.set("value", "first")
-        store.update_node_state(1, state1)
-        snapshot = store.create_snapshot(RoundNumber(0))
-
-        state2 = store.get_node_state(1)
-        state2.set("value", "second")
-        store.update_node_state(1, state2)
-        assert store.get_node_state(1).get("value") == "second"
-
-        store.restore_snapshot(snapshot)
-        assert store.get_node_state(1).get("value") == "first"
-
     def test_meta_state(self, simple_graph):
         store = StateStore(simple_graph)
         meta = store.get_meta_state()
