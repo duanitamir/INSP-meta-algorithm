@@ -1,44 +1,8 @@
 from typing import Dict, Any
-from dataclasses import dataclass
 from threading import RLock
 from src.graph.graph_manager import GraphManager
 from src.state.node import NodeState
 from src.utils.types import RoundNumber
-
-
-@dataclass
-class MetaState:
-    """Global simulation state."""
-
-    round_num: RoundNumber
-    converged: bool = False
-    termination_reason: str | None = None
-    final_matching: Dict[int, int] | None = None
-    metadata: Dict[str, Any] | None = None
-
-    def __post_init__(self):
-        if self.metadata is None:
-            self.metadata = {}
-
-    def with_round(self, round_num: RoundNumber) -> "MetaState":
-        """Return new MetaState with updated round number."""
-        return MetaState(
-            round_num=round_num,
-            converged=self.converged,
-            termination_reason=self.termination_reason,
-            final_matching=self.final_matching,
-            metadata=self.metadata.copy() if self.metadata else {},
-        )
-
-    def with_convergence(self, reason: str) -> "MetaState":
-        """Return new MetaState marked as converged."""
-        return MetaState(
-            round_num=self.round_num,
-            converged=True,
-            termination_reason=reason,
-            final_matching=self.final_matching,
-            metadata=self.metadata.copy() if self.metadata else {},
-        )
 
 
 class StateStore:
@@ -47,7 +11,13 @@ class StateStore:
     def __init__(self, graph: GraphManager):
         self.graph = graph
         self._node_states: Dict[int, NodeState] = {}
-        self._meta_state = MetaState(round_num=RoundNumber(0))
+
+        # Global state fields (formerly MetaState)
+        self.round_num: RoundNumber = RoundNumber(0)
+        self.converged: bool = False
+        self.termination_reason: str | None = None
+        self.final_matching: Dict[int, int] | None = None
+        self.metadata: Dict[str, Any] | None = {}
 
         # Fine-grained per-node locks for thread-safe parallel execution (Option 2)
         self._node_locks: Dict[int, RLock] = {}
@@ -90,9 +60,18 @@ class StateStore:
         """Get all node states (defensive copy)."""
         return {vid: state.clone() for vid, state in self._node_states.items()}
 
-    def get_meta_state(self) -> MetaState:
-        """Get global simulation state."""
-        return self._meta_state
+    def set_round(self, round_num: RoundNumber) -> None:
+        """Set current round number."""
+        self.round_num = round_num
+
+    def mark_converged(self, reason: str) -> None:
+        """Mark simulation as converged with termination reason."""
+        self.converged = True
+        self.termination_reason = reason
+
+    def set_final_matching(self, matching: Dict[int, int]) -> None:
+        """Set final matching result."""
+        self.final_matching = matching
 
     def update_node_state(self, node_id: int, state: NodeState) -> None:
         """Update state for a node (thread-safe via per-node lock)."""
@@ -128,7 +107,4 @@ class StateStore:
         for node_id, state in states.items():
             self._node_states[node_id] = state.clone()
 
-    def update_meta_state(self, meta_state: MetaState) -> None:
-        """Update global simulation state."""
-        self._meta_state = meta_state
 

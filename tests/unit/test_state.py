@@ -99,6 +99,6 @@ class TestStateStore:
 
     def test_meta_state(self, simple_graph):
         store = StateStore(simple_graph)
-        meta = store.get_meta_state()
-        assert meta.round_num == RoundNumber(0)
-        assert not meta.converged
+        assert store.round_num == RoundNumber(0)
+        assert not store.converged
+        assert store.termination_reason is None

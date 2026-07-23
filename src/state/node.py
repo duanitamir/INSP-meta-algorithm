@@ -2,6 +2,7 @@
 
 from typing import Any, Dict, Callable, FrozenSet, Optional
 import copy
+from src.state.node_state_schema import NodeStateSchema
 
 
 class NodeState:
@@ -18,7 +19,7 @@ class NodeState:
             node_id: Unique identifier for this node
         """
         self.node_id = node_id
-        self._state: Dict[str, Any] = {}
+        self._state: NodeStateSchema = {}  # type: ignore
         # Local neighbors dict: {neighbor_id: {matched: bool, matched_to: int, ...}}
         # Each node maintains this independently and updates via messages
         self.neighbors: Dict[int, Dict[str, Any]] = {}
