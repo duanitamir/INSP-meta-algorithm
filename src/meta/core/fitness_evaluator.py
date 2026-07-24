@@ -45,10 +45,10 @@ class FitnessEvaluator:
         return self._evaluate_centralized(graph, vector)
 
     def _evaluate_centralized(self, graph: GraphManager, vector: CanonicalVector) -> float:
-        """Evaluate using distributed orchestrator (fully distributed execution).
+        """Evaluate using centralized orchestrator (independent algorithm execution).
 
-        Uses DistributedOrchestrator with all algorithms running autonomously on nodes.
-        This maintains fully distributed architecture while achieving quality matching.
+        Uses CentralizedOrchestrator which runs each algorithm on independent StateStore copies.
+        This prevents algorithm interference while ensuring parameter differentiation.
 
         Args:
             graph: GraphManager instance
@@ -57,16 +57,15 @@ class FitnessEvaluator:
         Returns:
             float: Fitness score (matching weight)
         """
-        from src.meta.distributed.orchestrator import DistributedOrchestrator
+        from src.simulation.centralized_orchestrator import CentralizedOrchestrator
+        from src.config import ExperimentConfig
 
-        # Run distributed orchestrator with all algorithms (standard mode)
-        orchestrator = DistributedOrchestrator(
-            max_workers=self.max_workers,
-            use_convergence_detection=False,
-            min_iterations=10
-        )
-
-        matching, _ = orchestrator.execute(graph, vector)
+        # Run centralized orchestrator with all algorithms (each on independent state)
+        # max_rounds=3 balances parameter differentiation (4.9%) with speed (0.21s)
+        # Higher values (10+) cause convergence trap where all algorithms converge to same result
+        orchestrator = CentralizedOrchestrator()
+        orchestrator.setup(graph, ExperimentConfig(max_rounds=3))
+        matching = orchestrator.run_until_convergence(max_rounds=3, vector=vector)
 
         # Calculate weight as fitness score
         if matching:
