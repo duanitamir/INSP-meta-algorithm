@@ -19,6 +19,7 @@ from src.meta.core.algorithm_registry_builder import AlgorithmRegistryBuilder
 from src.algorithms.implementations.greedy_matching import GreedyMatching
 from src.algorithms.implementations.itai_israeli import ItaiIsraeliMaximalMatching
 from src.algorithms.implementations.luby_randomized import LubyRandomizedMatching
+from src.algorithms.implementations.wattenhofer_graph import WattenhoferGraphMatching
 
 
 class Algorithms(Enum):
@@ -34,6 +35,7 @@ class Algorithms(Enum):
     GREEDY = "greedy"
     ITAI = "itai"
     LUBY = "luby"
+    WATTENHOFER_GRAPH = "wattenhofer_graph"
 
     def __repr__(self) -> str:
         """String representation for debugging."""
@@ -59,9 +61,16 @@ AlgorithmRegistryBuilder.register(
     LubyRandomizedMatching
 )
 
+AlgorithmRegistryBuilder.register(
+    Algorithms.WATTENHOFER_GRAPH.value,
+    WattenhoferGraphMatching.PARAMETER_DEFINITION,
+    WattenhoferGraphMatching
+)
+
 __all__ = [
     "Algorithms",
     "GreedyMatching",
     "ItaiIsraeliMaximalMatching",
     "LubyRandomizedMatching",
+    "WattenhoferGraphMatching",
 ]

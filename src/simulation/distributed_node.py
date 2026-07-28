@@ -78,6 +78,37 @@ class DistributedNode:
         # Convergence detector (set by orchestrator)
         self.convergence_detector: Any | None = None
 
+        # Track should_stop for autonomous loop (Phase 1)
+        self.should_stop = False
+
+    def run_autonomous(self, canonical_vector: CanonicalVector = None) -> None:
+        """PHASE 1: Node's autonomous execution loop.
+
+        This is the core autonomous agent behavior - the node runs its own complete
+        algorithm loop without orchestrator control. Each node makes all its own
+        decisions and only communicates via messages.
+
+        Args:
+            canonical_vector: Parameter vector for algorithm configuration (optional)
+        """
+        from src.meta.core.canonical_vector import CanonicalVector
+
+        if canonical_vector is None:
+            canonical_vector = CanonicalVector()
+
+        # Run autonomous rounds until node decides to stop
+        while not self.should_stop and not self.finished:
+            # Execute one round (PHASE 0-5 all happen in execute_distributed_round)
+            continue_running, _ = self.execute_distributed_round(canonical_vector)
+
+            # Check if node should stop
+            if not continue_running or self.finished:
+                self.should_stop = True
+
+    def is_active(self) -> bool:
+        """Check if node is still active (not finished and not stopped)."""
+        return not self.finished and not self.should_stop
+
     def _validate_available_algorithms(self) -> Tuple[bool, str]:
         """Validate that all configured algorithms are registered in this process.
 
