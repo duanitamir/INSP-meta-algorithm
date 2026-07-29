@@ -1,76 +1,77 @@
-"""Parallel node executor - executes N nodes concurrently via ThreadPoolExecutor.
+"""Independent ready-node scheduler for the distributed simulator."""
 
-Phase 6: Extract parallelism from parameterizers to orchestrator level.
-This enables efficient multi-core execution at the node level (not within algorithms).
+from __future__ import annotations
 
-Key Design:
-- Each node executes independently (no shared state during execution)
-- ThreadPoolExecutor runs all nodes in parallel
-- Message delivery still happens sequentially (architectural constraint)
-- Tests pass without modification (behavior unchanged, just faster)
-"""
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
+from collections import deque
+from dataclasses import dataclass
+from typing import Callable, Dict, Set
 
-from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, List, Tuple
-from src.simulation.distributed_node import DistributedNode
-from src.meta.core.canonical_vector import CanonicalVector
+
+@dataclass(frozen=True)
+class RuntimeOutcome:
+    """Operational scheduler result; it contains no algorithmic decision."""
+
+    scheduled_ticks: int
+    active_node_ids: Set[int]
+    watchdog_exhausted: bool
 
 
 class ParallelNodeExecutor:
-    """Execute multiple DistributedNodes in parallel.
-
-    Uses ThreadPoolExecutor for concurrent node execution. Each node:
-    1. Runs its algorithms independently (no shared state during execution)
-    2. Produces continue_flag and status
-    3. Results collected after all nodes complete
-    """
+    """Run independent node ticks without a round-wide synchronization barrier."""
 
     def __init__(self, max_workers: int = 4):
-        """Initialize executor with thread pool size.
-
-        Args:
-            max_workers: Number of concurrent worker threads (default 4)
-        """
         self.max_workers = max_workers
+        self.last_outcome: RuntimeOutcome | None = None
 
-    def execute_all_nodes(
+    def run_until_idle(
         self,
-        nodes: Dict[int, DistributedNode],
-        canonical_vector: CanonicalVector,
-    ) -> List[bool]:
-        """Execute all nodes in parallel, return continue flags.
+        nodes: Dict[int, object],
+        max_ticks: int,
+        tick: Callable[[object], object] | None = None,
+    ) -> RuntimeOutcome:
+        """Schedule ready active nodes, resubmitting each one as it completes.
 
-        Args:
-            nodes: Dict of node_id -> DistributedNode
-            canonical_vector: Shared immutable parameter vector
-
-        Returns:
-            List of continue_flags from each node
+        ``tick`` lets the bootstrapper provide immutable run configuration.  The
+        executor observes only ``is_active`` and never reads a node vote, state,
+        or matching result.
         """
-        if not nodes:
-            return []
+        scheduled_ticks = 0
+        in_flight: Dict[Future, int] = {}
+        ready = deque(node_id for node_id, node in nodes.items() if node.is_active())
 
-        # Execute all nodes in parallel
-        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            futures = {
-                executor.submit(node.execute_distributed_round, canonical_vector): node_id
-                for node_id, node in nodes.items()
-            }
+        def submit(pool: ThreadPoolExecutor, node_id: int) -> bool:
+            nonlocal scheduled_ticks
+            if scheduled_ticks >= max_ticks or not nodes[node_id].is_active():
+                return False
+            operation = (lambda: tick(nodes[node_id])) if tick else nodes[node_id].tick
+            in_flight[pool.submit(operation)] = node_id
+            scheduled_ticks += 1
+            return True
 
-            # Collect results as they complete
-            results = {}
-            for future in futures:
-                node_id = futures[future]
-                try:
-                    continue_flag, status = future.result()
-                    results[node_id] = continue_flag
-                except Exception as e:
-                    print(f"Error executing node {node_id}: {e}")
-                    results[node_id] = False
+        with ThreadPoolExecutor(max_workers=self.max_workers) as pool:
+            while ready and len(in_flight) < self.max_workers and scheduled_ticks < max_ticks:
+                submit(pool, ready.popleft())
 
-        # Return continue flags in order
-        return [results.get(node_id, False) for node_id in sorted(nodes.keys())]
+            while in_flight:
+                completed, _ = wait(in_flight, return_when=FIRST_COMPLETED)
+                for future in completed:
+                    node_id = in_flight.pop(future)
+                    future.result()
+                    if nodes[node_id].is_active():
+                        ready.append(node_id)
+
+                while ready and len(in_flight) < self.max_workers and scheduled_ticks < max_ticks:
+                    submit(pool, ready.popleft())
+
+        active_node_ids = {node_id for node_id, node in nodes.items() if node.is_active()}
+        outcome = RuntimeOutcome(
+            scheduled_ticks=scheduled_ticks,
+            active_node_ids=active_node_ids,
+            watchdog_exhausted=scheduled_ticks >= max_ticks,
+        )
+        self.last_outcome = outcome
+        return outcome
 
     def name(self) -> str:
-        """Return executor name."""
         return f"ParallelNodeExecutor(workers={self.max_workers})"

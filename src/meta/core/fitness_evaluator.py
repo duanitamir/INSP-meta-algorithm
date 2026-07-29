@@ -89,12 +89,7 @@ class FitnessEvaluator:
         """
         from src.meta.distributed.orchestrator import DistributedOrchestrator
 
-        # Disable convergence detection for GA (too aggressive threshold)
-        # Convergence detector is useful for real distributed systems but breaks GA optimization
-        orchestrator = DistributedOrchestrator(
-            max_workers=self.max_workers,
-            use_convergence_detection=False
-        )
+        orchestrator = DistributedOrchestrator(max_workers=self.max_workers)
         matching, metrics = orchestrator.execute(graph, vector)
 
         # Calculate weight as fitness score

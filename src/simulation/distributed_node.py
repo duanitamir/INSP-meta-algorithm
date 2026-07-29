@@ -3,8 +3,8 @@
 from typing import Dict, List, Tuple, Any
 from src.state.node import NodeState
 from src.communication.message import Message
-from src.communication.message_queue import MessageQueue
 from src.communication.node_communicator import NodeCommunicator
+from src.communication.transport import InMemoryTransport
 from src.graph.graph_manager import GraphManager
 from src.graph.local_graph import LocalGraph
 from src.metrics.metrics_collector import MetricsCollector
@@ -18,7 +18,7 @@ class DistributedNode:
 
     **Owns (Local):**
     - state: This node's algorithm state
-    - inbox/outbox: This node's messages
+    - communicator: This node's addressed messages
     - round_number: Tracks its own execution rounds
     - local_metrics: Tracks own performance
     - convergence_vote: Local convergence decision
@@ -27,14 +27,14 @@ class DistributedNode:
     **Shared (Read-Only):**
     - graph: Network topology (immutable)
     - algorithm_config: Algorithm configuration (immutable)
-    - convergence_detector: Convergence detection logic (set by orchestrator)
     """
 
     def __init__(
         self,
         node_id: int,
         shared_graph: GraphManager,
-        algorithm_config: DistributedAlgorithmConfig | None = None
+        algorithm_config: DistributedAlgorithmConfig | None = None,
+        transport: InMemoryTransport | None = None,
     ):
         """Initialize a distributed node.
 
@@ -53,10 +53,11 @@ class DistributedNode:
         # State (this node's algorithm state)
         self.state = NodeState(node_id)
 
-        # Communication
-        self.inbox = MessageQueue(shared_graph)
-        self.outbox = MessageQueue(shared_graph)
-        self.communicator = NodeCommunicator(node_id, self.outbox, self.inbox)
+        # Communication is a recipient-bound facade over a black-box transport.
+        # A standalone node receives a private transport for local unit tests;
+        # a runtime supplies one shared transport to every node.
+        self.transport = transport or InMemoryTransport(shared_graph.vertices())
+        self.communicator = NodeCommunicator(node_id, self.transport)
 
         # Execution tracking
         self.round_number = 0
@@ -75,8 +76,10 @@ class DistributedNode:
         # Conflict resolution state (pending proposals from neighbors)
         self.pending_proposals: Dict[int, float] = {}
 
-        # Convergence detector (set by orchestrator)
-        self.convergence_detector: Any | None = None
+        # Endpoint-owned matching protocol time.  This is deliberately local:
+        # the executor may invoke a node, but does not advance its negotiations.
+        self.local_time = 0
+        self.proposal_timeout = 3
 
         # Track should_stop for autonomous loop (Phase 1)
         self.should_stop = False
@@ -96,18 +99,68 @@ class DistributedNode:
         if canonical_vector is None:
             canonical_vector = CanonicalVector()
 
-        # Run autonomous rounds until node decides to stop
-        while not self.should_stop and not self.finished:
+        max_iterations = int(canonical_vector.get("max_iterations") or 100)
+        executed_iterations = 0
+
+        # Run autonomous rounds until this node decides to stop or reaches its
+        # node-owned safety limit.  A node without incoming quorum messages
+        # must not spin forever.
+        while (
+            not self.should_stop
+            and not self.finished
+            and executed_iterations < max_iterations
+        ):
             # Execute one round (PHASE 0-5 all happen in execute_distributed_round)
             continue_running, _ = self.execute_distributed_round(canonical_vector)
+            executed_iterations += 1
 
             # Check if node should stop
             if not continue_running or self.finished:
                 self.should_stop = True
 
+        if executed_iterations >= max_iterations and self.is_active():
+            self.should_stop = True
+
     def is_active(self) -> bool:
         """Check if node is still active (not finished and not stopped)."""
         return not self.finished and not self.should_stop
+
+    def receive(self, message: Message) -> None:
+        """Receive an addressed message from the transport."""
+        if message.recipient != self.id:
+            raise ValueError(f"Message for node {message.recipient} delivered to node {self.id}")
+        self.transport.send(message.sender, self.id, message)
+
+    def advance_local_time(self, elapsed: int = 1) -> None:
+        """Advance only this node's logical clock."""
+        if elapsed < 0:
+            raise ValueError("Local time cannot move backwards")
+        self.local_time += elapsed
+
+    def tick(self) -> None:
+        """Process protocol messages and local deadlines without central direction."""
+        messages = self.communicator.receive_messages()
+        self._process_coordination_messages(messages)
+        self._process_protocol_messages(messages)
+        self._expire_tentative_match_if_needed()
+        self._decide_convergence()
+        self._gossip_convergence_vote()
+        if self._should_stop_based_on_quorum():
+            self.finished = True
+        self.advance_local_time()
+
+    def start_proposal(self, neighbor_id: int, weight: float) -> None:
+        """Start a match negotiation with one directly connected neighbor."""
+        if neighbor_id not in self.graph.neighbors():
+            raise ValueError(f"Node {neighbor_id} is not a neighbor of node {self.id}")
+        if self.state.is_matched() or self.state.get(NodeState.TENTATIVE_PARTNER) is not None:
+            return
+        self.state.begin_tentative_match(
+            neighbor_id,
+            self.local_time + self.proposal_timeout,
+            proposing=True,
+        )
+        self._send_protocol_message(neighbor_id, "PROPOSE", weight=weight)
 
     def _validate_available_algorithms(self) -> Tuple[bool, str]:
         """Validate that all configured algorithms are registered in this process.
@@ -150,8 +203,10 @@ class DistributedNode:
             return False, f"algorithm_validation_error: {error}"
 
         # PHASE 0: Process incoming messages
-        messages = self.inbox.get_messages(self.id)
+        messages = self.communicator.receive_messages()
         self._process_coordination_messages(messages)
+        self._process_protocol_messages(messages)
+        self._expire_tentative_match_if_needed()
 
         # PHASE 1: Get proposals from each algorithm (LOCAL SCOPE ONLY - neighbors)
         from src.meta.parameterizers.algorithm_parameterizer import UnifiedAlgorithmParameterizer
@@ -161,20 +216,16 @@ class DistributedNode:
             UnifiedAlgorithmParameterizer(algo_name)
             for algo_name in self.algorithm_config.available_algorithms
         ]
-        neighbors = list(self.graph.neighbors(self.id))
+        neighbors = self.graph.neighbors()
         context = self._create_context()
 
         proposals_per_algorithm = {}
         for param in parameterizers:
-            try:
-                # Each algorithm proposes ONLY to neighbors (local scope)
-                algo_name = param.name()
-                proposals = param.propose_to_neighbors(self.id, neighbors, context)
-                proposals_per_algorithm[algo_name] = proposals
-            except Exception as e:
-                # Log the error for debugging
-                algo_name = param.name()
-                proposals_per_algorithm[algo_name] = {}
+            # Each algorithm proposes ONLY to neighbors (local scope). Unexpected
+            # failures must surface rather than being mistaken for no proposal.
+            algo_name = param.name()
+            proposals = param.propose_to_neighbors(self.id, neighbors, context)
+            proposals_per_algorithm[algo_name] = proposals
 
         # PHASE 2: Accumulate proposals from all algorithms
         self.pending_proposals.clear()
@@ -193,9 +244,6 @@ class DistributedNode:
         # Handles: 0 proposals (no-op), 1 proposal (select it), N proposals (full voting)
         self.conflict_solution()
 
-        # PHASE 4: Handle confirmations (Phase 2 two-phase commit)
-        self._process_phase2_confirmations(messages)
-
         # Track metrics
         total_proposals = sum(len(p) for p in proposals_per_algorithm.values())
         self.local_metrics.record_round(
@@ -204,11 +252,11 @@ class DistributedNode:
             active_nodes=1 if self.state.is_matched() else 0,
         )
 
-        # Send coordination messages to neighbors
-        self._gossip_convergence_vote()
-
         # Decide convergence vote
         self._decide_convergence()
+
+        # Share this tick's local decision only after computing it.
+        self._gossip_convergence_vote()
 
         # PHASE 5: Check convergence
         should_stop = self._should_stop_based_on_quorum()
@@ -217,6 +265,7 @@ class DistributedNode:
             return False, "quorum_converged"
 
         self.round_number += 1
+        self.advance_local_time()
         return True, "continuing"
 
 
@@ -238,8 +287,6 @@ class DistributedNode:
         Args:
             messages: All messages received this round
         """
-        convergence_msgs = []
-
         for msg in messages:
             # Handle generic gossip messages by subtype
             if isinstance(msg, GossipMessage):
@@ -248,14 +295,6 @@ class DistributedNode:
                     self.receive_config_gossip(msg)
                     continue
                 elif msg.message_subtype == "convergence":
-                    # Create convergence message for detector
-                    conv_msg = GossipMessage.convergence_gossip(
-                        sender_node_id=msg.sender_node_id,
-                        should_stop=msg.payload.get("should_stop", False),
-                        round_num=msg.round_num,
-                        weight=msg.weight,
-                    )
-                    convergence_msgs.append(conv_msg)
                     continue
 
             # Handle legacy generic messages with type payload
@@ -264,70 +303,43 @@ class DistributedNode:
                 vote = msg.payload.get("vote", False)
                 self.known_convergence_votes[sender_id] = vote
 
-                # Create GossipMessage for detector
-                conv_msg = GossipMessage.convergence_gossip(
-                    sender_node_id=sender_id,
-                    should_stop=msg.payload.get("should_stop", vote),
-                    round_num=msg.payload.get("round", self.round_number),
-                    weight=msg.payload.get("weight", 0.0),
-                )
-                convergence_msgs.append(conv_msg)
-
-        # Pass convergence messages to detector if available
-        if convergence_msgs and self.convergence_detector is not None:
-            self.convergence_detector.receive_convergence_votes(self.id, convergence_msgs)
 
     def _decide_convergence(self) -> None:
-        """Decide this node's convergence vote based on local metrics.
+        """Decide this node's convergence vote based on local metrics (FULLY DISTRIBUTED).
 
-        Uses detector if available, otherwise falls back to local logic.
+        PHASE 2: Computes local convergence vote based on improvement threshold.
+        No centralized detector needed - pure distributed voting.
         """
-        if self.convergence_detector is None:
-            # Fallback: simple convergence decision
-            if self.round_number == 0:
-                self.convergence_vote = False
-                return
-
-            # Get current matching weight from matched_edges
-            matched_edges = self.state.get("matched_edges", [])
-            current_weight = sum(edge.weight for edge in matched_edges) if matched_edges else 0.0
-
-            # Compute improvement
-            if self.last_matching_weight > 0:
-                improvement = (current_weight - self.last_matching_weight) / self.last_matching_weight
-            else:
-                improvement = 1.0 if current_weight > 0 else 0.0
-
-            self.last_matching_weight = current_weight
-            self.convergence_vote = improvement < self.convergence_threshold
+        # First round: always vote CONTINUE (no improvement data yet)
+        if self.round_number == 0:
+            self.convergence_vote = False
             return
 
-        # Use detector for convergence decision
+        # Get current matching weight from matched_edges
         matched_edges = self.state.get("matched_edges", [])
         current_weight = sum(edge.weight for edge in matched_edges) if matched_edges else 0.0
 
-        self.convergence_detector.decide_convergence(
-            self.id,
-            self.last_matching_weight,
-            current_weight
-        )
+        # Compute improvement vs previous round
+        if self.last_matching_weight > 0:
+            improvement = (current_weight - self.last_matching_weight) / self.last_matching_weight
+        else:
+            improvement = 1.0 if current_weight > 0 else 0.0
+
+        # Update weight for next round
         self.last_matching_weight = current_weight
 
-    def _gossip_convergence_vote(self) -> None:
-        """Send convergence vote to random neighbors via message."""
-        # Check if detector says to gossip this round
-        if self.convergence_detector is not None:
-            if not self.convergence_detector.should_gossip(self.id, self.round_number):
-                return
+        # Vote to STOP if improvement < threshold (distributed decision)
+        self.convergence_vote = improvement < self.convergence_threshold
 
-            # Get convergence message from detector
-            conv_msg = self.convergence_detector.create_convergence_message(self.id, self.round_number)
-            should_stop = conv_msg.should_stop
-            weight = conv_msg.weight
-        else:
-            # Fallback: use simple convergence vote
-            should_stop = self.convergence_vote if self.convergence_vote is not None else False
-            weight = sum(edge.weight for edge in self.state.get("matched_edges", []))
+    def _gossip_convergence_vote(self) -> None:
+        """Send convergence vote to random neighbors via message (FULLY DISTRIBUTED).
+
+        PHASE 2: Each node broadcasts its convergence decision to neighbors.
+        Pure distributed protocol - no centralized detector.
+        """
+        # Use node's local convergence vote (computed in _decide_convergence)
+        should_stop = self.convergence_vote if self.convergence_vote is not None else False
+        weight = sum(edge.weight for edge in self.state.get("matched_edges", []))
 
         msg = Message(
             sender=self.id,
@@ -345,7 +357,7 @@ class DistributedNode:
         )
 
         # Send to random neighbors (not all to avoid flooding)
-        neighbors = list(self.graph.neighbors(self.id))
+        neighbors = self.graph.neighbors()
         if not neighbors:
             return
 
@@ -362,30 +374,34 @@ class DistributedNode:
                 payload=msg.payload.copy(),
                 round_num=self.round_number,
             )
-            self.outbox.send(neighbor_msg)
+            self.communicator.send_message(neighbor_msg)
 
     def _should_stop_based_on_quorum(self) -> bool:
-        """Check if quorum of nodes voted to stop based on gossip.
+        """Check if quorum of nodes voted to stop based on gossip (FULLY DISTRIBUTED).
 
-        Uses detector if available, otherwise falls back to local logic.
+        PHASE 2: Pure distributed quorum voting - no centralized detector.
+        Checks if >50% of known neighbors voted to stop.
 
         Returns:
             True if >quorum_threshold fraction of known nodes voted STOP
         """
-        if self.convergence_detector is not None:
-            # Use detector to check termination
-            return self.convergence_detector.should_terminate(self.id)
+        # A node must finish an endpoint negotiation it already entered.  A
+        # quorum can stop idle work, never discard a locally owned commit.
+        if self.state.get(NodeState.TENTATIVE_PARTNER) is not None:
+            return False
 
-        # Fallback: simple quorum check
+        # No votes collected yet
         if not self.known_convergence_votes:
             return False
 
+        # Count votes for STOP
         stop_votes = sum(1 for v in self.known_convergence_votes.values() if v)
         total_known = len(self.known_convergence_votes)
 
         if total_known == 0:
             return False
 
+        # Quorum: >50% of neighbors must vote to STOP
         fraction_voting_stop = stop_votes / total_known
         return fraction_voting_stop > self.quorum_threshold
 
@@ -419,41 +435,108 @@ class DistributedNode:
         }
 
 
+    def _send_protocol_message(self, recipient_id: int, message_type: str, **payload: Any) -> None:
+        """Send one endpoint-protocol message through black-box transport."""
+        self.communicator.send_message(
+            Message(sender=self.id, recipient=recipient_id, payload={"type": message_type, **payload}, round_num=self.round_number)
+        )
+
+    def _process_protocol_messages(self, messages: List[Message]) -> None:
+        """Advance only this endpoint's PROPOSE/ACCEPT/CONFIRM/CANCEL state."""
+        proposals = []
+        for message in messages:
+            if message.sender not in self.graph.neighbors():
+                continue
+            payload = message.payload
+            if not isinstance(payload, dict):
+                continue
+            message_type = payload.get("type")
+            if message_type == "PROPOSE":
+                proposals.append((message.sender, float(payload["weight"])))
+            elif message_type == "ACCEPT":
+                self._receive_accept(message.sender)
+            elif message_type == "REJECT":
+                self._receive_reject(message.sender)
+            elif message_type == "CONFIRM":
+                self._receive_confirm(message.sender, bool(payload.get("acknowledgement", False)))
+            elif message_type == "CANCEL":
+                self._receive_cancel(message.sender)
+
+        if proposals:
+            self._resolve_received_proposals(proposals)
+
+    def _resolve_received_proposals(self, proposals: List[Tuple[int, float]]) -> None:
+        """Choose one received proposal using local weight and deterministic tie-breaking."""
+        if self.state.is_matched() or self.state.get(NodeState.TENTATIVE_PARTNER) is not None:
+            for sender_id, _ in proposals:
+                self._send_protocol_message(sender_id, "REJECT")
+            return
+
+        winner_id, winner_weight = max(proposals, key=lambda item: (item[1], -item[0]))
+        self.state.begin_tentative_match(
+            winner_id,
+            self.local_time + self.proposal_timeout,
+            proposing=False,
+        )
+        for sender_id, _ in proposals:
+            if sender_id == winner_id:
+                self._send_protocol_message(sender_id, "ACCEPT", weight=winner_weight)
+            else:
+                self._send_protocol_message(sender_id, "REJECT")
+
+    def _receive_accept(self, sender_id: int) -> None:
+        if (
+            self.state.get(NodeState.TENTATIVE_PARTNER) != sender_id
+            or not self.state.get(NodeState.PROPOSAL_PENDING)
+        ):
+            return
+        self.state.begin_tentative_match(
+            sender_id,
+            self.local_time + self.proposal_timeout,
+            proposing=False,
+        )
+        self._send_protocol_message(sender_id, "CONFIRM", acknowledgement=False)
+
+    def _receive_reject(self, sender_id: int) -> None:
+        if self.state.get(NodeState.TENTATIVE_PARTNER) == sender_id:
+            self.state.clear_tentative_match()
+
+    def _receive_confirm(self, sender_id: int, acknowledgement: bool) -> None:
+        if self.state.get(NodeState.TENTATIVE_PARTNER) != sender_id:
+            return
+        if acknowledgement:
+            self.state.set_matched_to(sender_id)
+            self.state.clear_tentative_match()
+            return
+
+        self.state.set_matched_to(sender_id)
+        self.state.clear_tentative_match()
+        self._send_protocol_message(sender_id, "CONFIRM", acknowledgement=True)
+
+    def _receive_cancel(self, sender_id: int) -> None:
+        if self.state.get(NodeState.TENTATIVE_PARTNER) == sender_id:
+            self.state.clear_tentative_match()
+
+    def _expire_tentative_match_if_needed(self) -> None:
+        partner_id = self.state.get(NodeState.TENTATIVE_PARTNER)
+        deadline = self.state.get(NodeState.PROPOSAL_DEADLINE)
+        if partner_id is None or deadline is None or self.local_time < deadline:
+            return
+        self.state.clear_tentative_match()
+        self._send_protocol_message(partner_id, "CANCEL")
+
     def conflict_solution(self) -> None:
-        """Resolve all pending proposals via local endpoint voting.
-
-        Selects the best proposal (highest weight) by deterministic criteria.
-        Only matches if this node is not already matched (symmetry constraint).
-        """
-        # Only match if not already matched (matching constraint: each node matched at most once)
+        """Start one locally selected negotiation; it never writes a final match."""
         if self.pending_proposals and not self.state.is_matched():
-            # Find best proposer by highest weight (deterministic on node_id for tie-break)
             best_neighbor, best_weight = max(
-                self.pending_proposals.items(),
-                key=lambda item: (item[1], -item[0])
+                self.pending_proposals.items(), key=lambda item: (item[1], -item[0])
             )
-
-            # Accept the best proposal
-            self.state.set_matched_to(best_neighbor)
-
-        # Clear proposals for next round
+            self.start_proposal(best_neighbor, best_weight)
         self.pending_proposals.clear()
-
-    def _process_phase2_confirmations(self, messages: List[Message]) -> None:
-        """Process phase 2 confirmation messages.
-
-        Args:
-            messages: All messages received this round
-        """
-        # Phase 2/4 message handling moved to algorithm level
-        # This method is a placeholder for future distributed consensus protocols
-        pass
 
     def reset(self) -> None:
         """Reset node to initial state."""
         self.state = NodeState(self.id)
-        self.inbox = MessageQueue(self.graph)
-        self.outbox = MessageQueue(self.graph)
         self.round_number = 0
         self.finished = False
         self.local_metrics.reset()
@@ -461,6 +544,7 @@ class DistributedNode:
         self.known_convergence_votes.clear()
         self.last_matching_weight = 0.0
         self.pending_proposals.clear()
+        self.local_time = 0
 
     # ============================================================================
     # CONFIG GOSSIP PROTOCOL (Distributed Configuration Spreading)
@@ -473,7 +557,7 @@ class DistributedNode:
         including available algorithms list (Phase 8 - NEW).
         Neighbors will accept if version is higher than their current.
         """
-        neighbors = list(self.graph.neighbors(self.id))
+        neighbors = self.graph.neighbors()
         if not neighbors:
             return
 
@@ -495,7 +579,7 @@ class DistributedNode:
         sample_size = min(3, len(neighbors))
         sampled_neighbors = random.sample(neighbors, sample_size)
 
-        # Send to sampled neighbors via Message wrapper (for MessageQueue compatibility)
+        # Send to sampled neighbors through recipient-scoped transport.
         for neighbor in sampled_neighbors:
             msg = Message(
                 sender=self.id,
@@ -503,7 +587,7 @@ class DistributedNode:
                 payload=generic_msg.payload,  # Use GossipMessage payload
                 round_num=self.round_number,
             )
-            self.outbox.send(msg)
+            self.communicator.send_message(msg)
 
     def receive_config_gossip(self, msg: GossipMessage) -> None:
         """Receive and potentially adopt algorithm configuration from neighbor.

@@ -81,11 +81,7 @@ class DistributedCascadingEvaluator:
             cascade_graph = self._create_filtered_graph(graph, already_matched_nodes)
 
             # Run distributed orchestrator on filtered graph
-            orchestrator = DistributedOrchestrator(
-                max_workers=self.max_workers,
-                use_convergence_detection=False,
-                min_iterations=self.min_rounds
-            )
+            orchestrator = DistributedOrchestrator(max_workers=self.max_workers)
 
             matching, _ = orchestrator.execute(cascade_graph, vector)
 

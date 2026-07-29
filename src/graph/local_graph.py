@@ -6,7 +6,7 @@ not the entire graph structure. This is essential for true distributed systems
 where nodes must not have global knowledge.
 """
 
-from typing import List, Optional
+from typing import List
 from src.graph.graph_manager import GraphManager
 
 
@@ -24,9 +24,9 @@ class LocalGraph:
     Graph wrapper restricting node to local neighborhood only.
 
     Provides safe accessors for distributed nodes:
-    - neighbors(node_id): Get neighbors of any node
-    - get_edge_weight(u, v): Get edge weight between nodes
-    - degree(node_id): Get degree of a node
+    - neighbors(): Get the owner's neighbors
+    - get_edge_weight(u, v): Get weight of an edge incident to the owner
+    - degree(): Get the owner's degree
 
     Blocks global inspection (raises DistributionViolation):
     - vertices(): Cannot see all vertices
@@ -48,23 +48,19 @@ class LocalGraph:
         self._graph = full_graph
         self._node_id = node_id
 
-    def neighbors(self, node_id: Optional[int] = None) -> List[int]:
+    def neighbors(self) -> List[int]:
         """
-        Get neighbors of a node.
+        Get the owner's neighbors.
 
         Args:
-            node_id: The node ID to get neighbors for (defaults to self)
-
         Returns:
             List of node IDs that are neighbors
         """
-        if node_id is None:
-            node_id = self._node_id
-        return list(self._graph.neighbors(node_id))
+        return list(self._graph.neighbors(self._node_id))
 
     def get_edge_weight(self, u: int, v: int) -> float:
         """
-        Get weight of edge between two nodes.
+        Get weight of an edge incident to the owner.
 
         Args:
             u: Source node ID
@@ -73,21 +69,26 @@ class LocalGraph:
         Returns:
             Weight of the edge
         """
+        if self._node_id not in (u, v):
+            raise DistributionViolation("Node may read only an incident edge.")
+
+        other = v if u == self._node_id else u
+        if other not in self._graph.neighbors(self._node_id):
+            raise DistributionViolation(
+                "Node may read only an existing incident edge."
+            )
+
         return self._graph.get_edge_weight(u, v)
 
-    def degree(self, node_id: Optional[int] = None) -> int:
+    def degree(self) -> int:
         """
-        Get degree of a node.
+        Get the owner's degree.
 
         Args:
-            node_id: The node ID to get degree for (defaults to self)
-
         Returns:
             Number of neighbors
         """
-        if node_id is None:
-            node_id = self._node_id
-        return len(self.neighbors(node_id))
+        return len(self.neighbors())
 
     def vertices(self) -> List[int]:
         """
@@ -118,15 +119,3 @@ class LocalGraph:
             "Node cannot inspect full edge set. "
             "This violates local knowledge constraint."
         )
-
-    def calculate_matching_weight(self, matching: dict) -> float:
-        """
-        Calculate weight of a matching (safe - uses full graph but for read-only calculation).
-
-        Args:
-            matching: Dict mapping node -> matched_node
-
-        Returns:
-            Total weight of matching
-        """
-        return self._graph.calculate_matching_weight(matching)

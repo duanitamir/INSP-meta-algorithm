@@ -183,6 +183,11 @@ class MatchingAlgorithm(ABC):
         Returns:
             List of neighbor IDs that are currently unmatched
         """
+        from src.graph.local_graph import LocalGraph
+
+        if isinstance(context.graph, LocalGraph):
+            return context.graph.neighbors()
+
         return list(
             context.graph.neighbors(node_id, state_store=context.state_store, filter_active=True)
         )

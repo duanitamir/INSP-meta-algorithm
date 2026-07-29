@@ -1,186 +1,54 @@
-"""In-memory transport implementation for message passing.
+"""Recipient-scoped, thread-safe in-memory transport for node messages."""
 
-Provides the InMemoryTransport class for testing and single-machine simulation.
-All messages stay in RAM with no network overhead.
-"""
-
-from typing import List, Dict, Any
 from collections import defaultdict
+from threading import RLock
+from typing import Any, Dict, Iterable, List
+
 from src.communication.message import Message, SemanticMessage
 
 
 class InMemoryTransport:
-    """In-memory message transport using dictionary-based queues.
+    """Black-box mailbox transport.
 
-    Suitable for testing and single-machine simulation.
-    All messages stay in RAM. No network overhead.
+    A recipient can consume only its own mailbox.  Transport deliberately does
+    not expose a network-wide pending-message view, nor does it inspect message
+    payloads to make protocol decisions.
     """
 
-    def __init__(self):
-        """Initialize in-memory transport."""
-        # Dictionary: node_id -> list of messages for that node
-        self._queues: Dict[int, List[Message]] = defaultdict(list)
-        self._stats = {
-            "messages_sent": 0,
-            "messages_delivered": 0,
-            "broadcasts": 0,
-        }
+    def __init__(self, recipient_ids: Iterable[int]):
+        self._recipient_ids = frozenset(recipient_ids)
+        self._queues: Dict[int, List[Message | SemanticMessage]] = defaultdict(list)
+        self._lock = RLock()
+        self._stats = {"messages_sent": 0, "messages_delivered": 0}
 
-    def send(self, sender_id: int, recipient_id: int, message: Message) -> None:
-        """Send message from one node to another.
-
-        Args:
-            sender_id: Source node ID
-            recipient_id: Destination node ID
-            message: Message object
-        """
-        # Create new message with correct sender/recipient (messages are immutable)
-        if hasattr(message, 'message_type'):
-            msg = SemanticMessage(
-                sender=sender_id,
-                recipient=recipient_id,
-                message_type=message.message_type,
-                payload=message.payload,
-                round_num=getattr(message, 'round_num', 0),
-                message_id=getattr(message, 'message_id'),
-            )
-        else:
-            msg = message
-        self._queues[recipient_id].append(msg)
-        self._stats["messages_sent"] += 1
-
-    def send_batch(self, sender_id: int, messages: List[Message]) -> None:
-        """Send batch of messages from one node.
-
-        Args:
-            sender_id: Source node ID
-            messages: List of messages to send
-        """
-        for message in messages:
-            # Create new message with correct sender (messages are immutable)
-            if hasattr(message, 'message_type'):
-                msg = SemanticMessage(
-                    sender=sender_id,
-                    recipient=message.recipient,
-                    message_type=message.message_type,
-                    payload=message.payload,
-                    round_num=getattr(message, 'round_num', 0),
-                    message_id=getattr(message, 'message_id'),
-                )
-            else:
-                msg = message
-            self._queues[message.recipient].append(msg)
-            self._stats["messages_sent"] += 1
-
-    def receive(self, recipient_id: int) -> List[Message]:
-        """Receive all messages for a node.
-
-        Args:
-            recipient_id: Destination node ID
-
-        Returns:
-            List of pending messages
-        """
-        messages = self._queues.get(recipient_id, [])
-        # Don't clear—let orchestrator control delivery
-        return messages
-
-    def broadcast(
-        self, sender_id: int, recipient_ids: List[int], message: Message
-    ) -> None:
-        """Send message to multiple recipients.
-
-        Args:
-            sender_id: Source node ID
-            recipient_ids: List of destination node IDs
-            message: Message object to send
-        """
-        for recipient_id in recipient_ids:
-            self.send(sender_id, recipient_id, message)
-        self._stats["broadcasts"] += 1
-
-    def broadcast_neighbors(
+    def send(
         self,
         sender_id: int,
-        neighbor_ids: List[int],
-        message: Message,
+        recipient_id: int,
+        message: Message | SemanticMessage,
     ) -> None:
-        """Send message to all neighbors of a node.
+        """Append one immutable message to one registered recipient mailbox."""
+        if recipient_id not in self._recipient_ids:
+            raise ValueError(f"Recipient {recipient_id} is not registered")
+        if message.sender != sender_id or message.recipient != recipient_id:
+            raise ValueError("Transport sender and recipient must match the message")
+        with self._lock:
+            self._queues[recipient_id].append(message)
+            self._stats["messages_sent"] += 1
 
-        Args:
-            sender_id: Source node ID
-            neighbor_ids: List of neighbor node IDs
-            message: Message object to send
-        """
-        # Same as broadcast in in-memory (no topology optimization)
-        self.broadcast(sender_id, neighbor_ids, message)
-
-    def broadcast_all(
-        self, sender_id: int, all_node_ids: List[int], message: Message
-    ) -> None:
-        """Send message to all nodes in network.
-
-        Args:
-            sender_id: Source node ID
-            all_node_ids: List of all node IDs
-            message: Message object to send
-        """
-        # Send to all except self
-        recipient_ids = [nid for nid in all_node_ids if nid != sender_id]
-        self.broadcast(sender_id, recipient_ids, message)
-
-    def deliver_pending_messages(self) -> None:
-        """Deliver all pending messages.
-
-        In in-memory transport, messages are already delivered instantly.
-        This is a no-op but required by interface.
-        """
-        self._stats["messages_delivered"] += self._stats["messages_sent"]
-
-    def clear(self) -> None:
-        """Clear all pending messages."""
-        self._queues.clear()
-        self._stats = {
-            "messages_sent": 0,
-            "messages_delivered": 0,
-            "broadcasts": 0,
-        }
-
-    def name(self) -> str:
-        """Return transport implementation name.
-
-        Returns:
-            "in-memory"
-        """
-        return "in-memory"
+    def receive(self, recipient_id: int) -> List[Message | SemanticMessage]:
+        """Destructively consume messages addressed to exactly one recipient."""
+        if recipient_id not in self._recipient_ids:
+            raise ValueError(f"Recipient {recipient_id} is not registered")
+        with self._lock:
+            messages = list(self._queues.pop(recipient_id, []))
+            self._stats["messages_delivered"] += len(messages)
+        return messages
 
     def stats(self) -> Dict[str, Any]:
-        """Return transport statistics.
+        """Return operational transport statistics without exposing messages."""
+        with self._lock:
+            return {**self._stats, "queue_sizes": {key: len(value) for key, value in self._queues.items()}}
 
-        Returns:
-            Dictionary with message counts
-        """
-        return {
-            **self._stats,
-            "queue_sizes": {nid: len(msgs) for nid, msgs in self._queues.items()},
-        }
-
-    def _get_queue(self, node_id: int) -> List[Message]:
-        """Get message queue for a specific node (internal use).
-
-        Args:
-            node_id: Node ID
-
-        Returns:
-            List of messages
-        """
-        return self._queues.get(node_id, [])
-
-    def _clear_node_queue(self, node_id: int) -> None:
-        """Clear messages for a specific node (internal use).
-
-        Args:
-            node_id: Node ID
-        """
-        if node_id in self._queues:
-            self._queues[node_id].clear()
+    def name(self) -> str:
+        return "in-memory"

@@ -12,6 +12,10 @@ class NodeState:
     Works for both centralized and distributed use cases.
     """
 
+    PROPOSAL_PENDING = "proposal_pending"
+    TENTATIVE_PARTNER = "tentative_partner"
+    PROPOSAL_DEADLINE = "proposal_deadline"
+
     def __init__(self, node_id: int):
         """Initialize node state.
 
@@ -160,6 +164,18 @@ class NodeState:
             True if node is matched, False otherwise
         """
         return self._state.get("matched_to") is not None
+
+    def begin_tentative_match(self, partner_id: int, deadline: int, *, proposing: bool) -> None:
+        """Record this endpoint's local, not-yet-final match agreement."""
+        self.set(self.TENTATIVE_PARTNER, partner_id)
+        self.set(self.PROPOSAL_DEADLINE, deadline)
+        self.set(self.PROPOSAL_PENDING, proposing)
+
+    def clear_tentative_match(self) -> None:
+        """Clear local negotiation state without changing a final match."""
+        self.delete(self.TENTATIVE_PARTNER)
+        self.delete(self.PROPOSAL_DEADLINE)
+        self.delete(self.PROPOSAL_PENDING)
 
     # Serialization & Utilities
 
