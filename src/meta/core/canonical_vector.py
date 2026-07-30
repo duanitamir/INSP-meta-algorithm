@@ -8,6 +8,8 @@ The vector is 100% agnostic to specific algorithms - it discovers and
 evolves whatever parameters are available in the AlgorithmRegistry.
 """
 
+import hashlib
+import json
 import random
 from typing import Tuple, List, Dict, Union, Any
 
@@ -143,6 +145,11 @@ class CanonicalVector:
             Dict of all parameters
         """
         return self._parameters.copy()
+
+    def fingerprint(self) -> str:
+        """Return a stable identity for this vector's serialized parameters."""
+        payload = json.dumps(self.to_dict(), sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(payload.encode()).hexdigest()
 
     def to_list(self) -> List[float | int]:
         """Convert parameters to list for GA operations.

@@ -31,6 +31,10 @@ class DistributedAlgorithmConfig:
     quorum_threshold: float = 0.5
     max_iterations: int = 100
 
+    # Versioned source contract for this immutable-at-startup configuration.
+    schema_version: int = 1
+    vector_fingerprint: str = ""
+
     # Algorithm parameters (100% agnostic - dynamic storage, not hardcoded)
     algorithm_parameters: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     # Example: {"greedy": {"max_rounds": 100}, "itai": {...}, "luby": {...}}
@@ -193,6 +197,8 @@ class DistributedAlgorithmConfig:
             convergence_threshold=vector.get("convergence_threshold") or 0.05,
             quorum_threshold=0.5,  # Default (not in CanonicalVector)
             max_iterations=int(vector.get("max_iterations") or 100),
+            schema_version=1,
+            vector_fingerprint=vector.fingerprint(),
             algorithm_parameters=algorithm_parameters,  # Dynamic storage
             version=1,
             algorithm_list_version=1

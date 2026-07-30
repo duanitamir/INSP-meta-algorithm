@@ -128,6 +128,16 @@ class TestCanonicalVectorSerialization:
         assert reconstructed.convergence_threshold == original.convergence_threshold
 
 
+class TestCanonicalVectorFingerprint:
+    """Test deterministic vector identity."""
+
+    def test_equivalent_vectors_have_the_same_stable_fingerprint(self):
+        first = CanonicalVector(max_iterations=20)
+        second = CanonicalVector.from_dict(first.to_dict())
+
+        assert first.fingerprint() == second.fingerprint()
+
+
 class TestCanonicalVectorUtilities:
     """Test utility methods."""
 
