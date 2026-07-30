@@ -51,16 +51,15 @@ Centralized orchestration layer combining multiple algorithms with automatic par
   - Parallel evaluation (3-4x speedup)
   - Adaptive mutation & early stopping
 
-### Phase 3: Distributed System (✅ Complete)
+### Distributed Runtime
 
-Fully distributed implementation replacing Phase 2 centralized components:
+The current runtime is defined by
+[DISTRIBUTED_EXECUTION_SOURCE_OF_TRUTH.md](../DISTRIBUTED_EXECUTION_SOURCE_OF_TRUTH.md).
 
-- **DistributedOrchestrator** — No central bottleneck
-- **DistributedParameterEvolver** — Gossip-based GA per node
-- **DistributedConflictResolver** — Edge voting consensus
-- **DistributedConvergenceDetector** — Quorum-based termination
-
-All components tested: 87 tests, 100% coverage on Phase 3
+- **DistributedOrchestrator** — Bootstrap and observer only
+- **DistributedNode** — Owns endpoint matching protocol and local convergence
+- **InMemoryTransport** — Recipient-scoped, destructive message delivery
+- **ParallelNodeExecutor** — Schedules ready nodes without an algorithmic barrier
 
 ---
 

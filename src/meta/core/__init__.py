@@ -9,12 +9,20 @@ Contains:
 
 from .canonical_vector import CanonicalVector
 from .fitness_evaluator import FitnessEvaluator
+from .vector_evaluator import (
+    DistributedRuntimeEvaluator,
+    EvaluationResult,
+    VectorEvaluator,
+)
 from .distributed_cascading_evaluator import DistributedCascadingEvaluator
 from .meta_algorithm_ga import MetaAlgorithmGA, PopulationEvaluation
 
 __all__ = [
     "CanonicalVector",
     "FitnessEvaluator",
+    "DistributedRuntimeEvaluator",
+    "EvaluationResult",
+    "VectorEvaluator",
     "DistributedCascadingEvaluator",
     "MetaAlgorithmGA",
     "PopulationEvaluation",

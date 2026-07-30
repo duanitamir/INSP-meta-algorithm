@@ -1,13 +1,17 @@
 """Bootstrap and observation boundary for distributed node execution."""
 
-from typing import Dict, Tuple
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Dict, Tuple
 
 from src.communication.transport import InMemoryTransport
 from src.config import DistributedAlgorithmConfig
 from src.graph.graph_manager import GraphManager
-from src.meta.core.canonical_vector import CanonicalVector
 from src.simulation.distributed_node import DistributedNode
 from src.simulation.parallel_node_executor import ParallelNodeExecutor, RuntimeOutcome
+
+if TYPE_CHECKING:
+    from src.meta.core.canonical_vector import CanonicalVector
 
 
 class DistributedOrchestrator:

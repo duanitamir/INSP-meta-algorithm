@@ -1,20 +1,11 @@
-"""Phase 3 fully distributed implementation (primary production system).
+"""Distributed matching runtime.
 
-Contains:
-- DistributedOrchestrator: Main orchestration, replaces CascadingLoop
-- DistributedConvergenceDetector: Quorum-based termination detection
-- DistributedParameterEvolver: Gossip-based GA evolution per node
-
-Note: Conflict resolution is now handled by DistributedNode._local_conflict_resolution()
-via endpoint voting in Phase 4.
+The runtime exposes a bootstrap/observer orchestrator.  Endpoint nodes own
+matching, convergence, and protocol decisions through addressed messages.
 """
 
 from .orchestrator import DistributedOrchestrator
-from .convergence_detector import DistributedConvergenceDetector
-from .parameter_evolver import DistributedParameterEvolver
 
 __all__ = [
     "DistributedOrchestrator",
-    "DistributedConvergenceDetector",
-    "DistributedParameterEvolver",
 ]
