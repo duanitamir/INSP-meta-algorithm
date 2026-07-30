@@ -485,17 +485,9 @@ class UnifiedAlgorithmParameterizer(BaseParameterizer):
         if not algo_class:
             return {}
 
-        # Extract parameters for this algorithm (dynamically, no hardcoding)
-        vector = getattr(context, "vector", None)
-        param_defs = algo_def.get("parameters", {})
-
-        params = {}
-        for param_name in param_defs.keys():
-            full_param_name = f"{self.algorithm_type}_{param_name}"
-            if vector:
-                value = vector.get(full_param_name)
-                if value is not None:
-                    params[param_name] = value
+        # The distributed runtime exposes only its immutable startup config.
+        # It never gives an algorithm a global vector or state repository.
+        params = context.config.get_algorithm_params(self.algorithm_type).copy()
 
         # Create algorithm and get proposals (works identically for all algorithms)
         algo = algo_class(parameters=params if params else None)

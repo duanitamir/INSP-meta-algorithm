@@ -1,9 +1,12 @@
 from abc import ABC, abstractmethod
-from typing import Dict, List, Tuple, Any
+from typing import TYPE_CHECKING, Dict, List, Tuple, Any
 from dataclasses import dataclass
 from src.state.store import StateStore
 from src.communication.message import Message
 from src.utils.types import RoundNumber
+
+if TYPE_CHECKING:
+    from src.simulation.local_node_context import LocalNodeContext
 
 
 @dataclass
@@ -98,7 +101,12 @@ class MatchingAlgorithm(ABC):
         ...
 
     @abstractmethod
-    def propose_to_neighbors(self, node_id: int, neighbors: List[int], context) -> Dict[int, float]:
+    def propose_to_neighbors(
+        self,
+        node_id: int,
+        neighbors: List[int],
+        context: "LocalNodeContext",
+    ) -> Dict[int, float]:
         """
         Get proposals to neighbors (local scope only).
 

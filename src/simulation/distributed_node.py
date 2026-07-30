@@ -10,6 +10,7 @@ from src.graph.local_graph import LocalGraph
 from src.metrics.metrics_collector import MetricsCollector
 from src.config import DistributedAlgorithmConfig
 from src.meta.messages.gossip_message import GossipMessage
+from src.simulation.local_node_context import LocalNodeContext
 
 
 class DistributedNode:
@@ -217,7 +218,7 @@ class DistributedNode:
             for algo_name in self.algorithm_config.available_algorithms
         ]
         neighbors = self.graph.neighbors()
-        context = self._create_context()
+        context = self._create_context(messages)
 
         proposals_per_algorithm = {}
         for param in parameterizers:
@@ -269,12 +270,16 @@ class DistributedNode:
         return True, "continuing"
 
 
-    def _create_context(self):
-        """Create algorithm context for this node."""
-        from src.simulation.algorithm_context import AlgorithmContext
-
-        return AlgorithmContext(
-            graph=self.graph, state_store=None, round_num=self.round_number
+    def _create_context(self, messages: List[Message]) -> LocalNodeContext:
+        """Create the restricted context available to this endpoint's algorithms."""
+        return LocalNodeContext(
+            node_id=self.id,
+            graph=self.graph,
+            state=self.state,
+            messages=tuple(messages),
+            config=self.algorithm_config,
+            round_number=self.round_number,
+            logical_time=self.local_time,
         )
 
     def _process_coordination_messages(self, messages: List[Message]) -> None:

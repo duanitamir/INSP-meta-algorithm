@@ -4,7 +4,10 @@ from src.utils.types import RoundNumber
 
 
 class AlgorithmContext:
-    """Runtime context provided to nodes during execution."""
+    """Legacy centralized context retained for the offline baseline only.
+
+    Distributed proposal algorithms receive ``LocalNodeContext`` instead.
+    """
 
     def __init__(
         self,
