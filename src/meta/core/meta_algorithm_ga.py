@@ -6,6 +6,7 @@ from typing import List, NamedTuple, Tuple, Optional
 
 from src.graph.graph_manager import GraphManager
 from src.meta.core.canonical_vector import CanonicalVector
+from src.meta.core.evaluation_suite import EvaluationSuite
 from src.meta.core.fitness_evaluator import FitnessEvaluator
 
 
@@ -30,6 +31,7 @@ class MetaAlgorithmGA:
     def __init__(
         self,
         fitness_evaluator: FitnessEvaluator | None = None,
+        evaluation_suite: EvaluationSuite | None = None,
         population_size: int = 20,
         generations: int = 10,
         mutation_rate: float = 0.1,
@@ -43,6 +45,7 @@ class MetaAlgorithmGA:
 
         Args:
             fitness_evaluator: FitnessEvaluator instance (if None, creates one based on flags)
+            evaluation_suite: Optional graph-family suite used to score every candidate
             population_size: Number of vectors in population
             generations: Number of generations to evolve
             mutation_rate: Base mutation probability per parameter [0, 1]
@@ -54,6 +57,7 @@ class MetaAlgorithmGA:
             algorithms: Optional list of Algorithms enum values to optimize for
         """
         self.algorithms = algorithms
+        self.evaluation_suite = evaluation_suite
 
         if fitness_evaluator is None:
             # Create evaluator based on cascading flag
@@ -90,7 +94,7 @@ class MetaAlgorithmGA:
         baseline_vector = CanonicalVector()
 
         # Evaluate baseline to get true fitness on this graph
-        baseline_fitness = self.fitness_evaluator.evaluate(graph, baseline_vector)
+        baseline_fitness = self._evaluate_candidate(graph, baseline_vector)
 
         # Create initial population: baseline + diverse random vectors
         population = [baseline_vector] + [CanonicalVector() for _ in range(self.population_size - 1)]
@@ -135,9 +139,17 @@ class MetaAlgorithmGA:
         """Evaluate population fitness in parallel."""
         with ThreadPoolExecutor(max_workers=self.num_workers) as executor:
             fitnesses = list(
-                executor.map(lambda v: self.fitness_evaluator.evaluate(graph, v), population)
+                executor.map(lambda v: self._evaluate_candidate(graph, v), population)
             )
         return [PopulationEvaluation(v, f) for v, f in zip(population, fitnesses)]
+
+    def _evaluate_candidate(self, graph: GraphManager, vector: CanonicalVector) -> float:
+        """Score one candidate through its configured evaluator or graph-family suite."""
+        if self.evaluation_suite is not None:
+            return self.evaluation_suite.evaluate(vector, self.fitness_evaluator).score
+
+        result = self.fitness_evaluator.evaluate(graph, vector)
+        return float(getattr(result, "score", result))
 
     def _get_adaptive_mutation_rate(self, no_improve_count: int, max_no_improve: int) -> float:
         """Compute adaptive mutation rate based on convergence."""
