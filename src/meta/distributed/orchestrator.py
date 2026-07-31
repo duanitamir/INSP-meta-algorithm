@@ -20,7 +20,7 @@ class DistributedOrchestrator:
     def __init__(self, max_workers: int = 4) -> None:
         self.executor = ParallelNodeExecutor(max_workers=max_workers)
         self._nodes: Dict[int, DistributedNode] = {}
-        self._vector: CanonicalVector | None = None
+        self._config: DistributedAlgorithmConfig | None = None
 
     def start(
         self, graph: GraphManager, canonical_vector: CanonicalVector, pre_matched_nodes: set | None = None
@@ -40,16 +40,16 @@ class DistributedOrchestrator:
         }
         for node_id in pre_matched_nodes:
             self._nodes[node_id].finished = True
-        self._vector = canonical_vector
+        self._config = config
 
     def run(self, max_ticks: int) -> RuntimeOutcome:
         """Run only the safety-bounded scheduler; it has no convergence logic."""
-        if self._vector is None:
+        if self._config is None:
             raise RuntimeError("start() must be called before run()")
         return self.executor.run_until_idle(
             self._nodes,
             max_ticks=max_ticks,
-            tick=lambda node: node.execute_distributed_round(self._vector),
+            tick=lambda node: node.execute_distributed_round(),
         )
 
     def execute(
@@ -60,8 +60,9 @@ class DistributedOrchestrator:
     ) -> Tuple[Dict[int, int], Dict]:
         """Execute a safety-bounded simulator run and return passive observations."""
         self.start(graph, canonical_vector, pre_matched_nodes)
-        max_iterations = int(canonical_vector.get("max_iterations") or 100)
-        outcome = self.run(max_ticks=max_iterations * max(1, len(self._nodes)))
+        if self._config is None:
+            raise RuntimeError("start() must create a runtime configuration")
+        outcome = self.run(max_ticks=self._config.max_iterations * max(1, len(self._nodes)))
         matching, final_weight = self._collect_results(graph)
         return matching, {
             "outcome": "watchdog_exhausted" if outcome.watchdog_exhausted else "nodes_stopped",
@@ -69,6 +70,8 @@ class DistributedOrchestrator:
             "active_node_ids": outcome.active_node_ids,
             "iterations": outcome.scheduled_ticks,
             "final_weight": final_weight,
+            "config_fingerprint": self._config.vector_fingerprint,
+            "max_iterations": self._config.max_iterations,
             "central_algorithmic_decisions": 0,
         }
 

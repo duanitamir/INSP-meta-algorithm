@@ -1,6 +1,6 @@
 """Fully distributed node for autonomous algorithm execution and coordination."""
 
-from typing import TYPE_CHECKING, Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 from src.state.node import NodeState
 from src.communication.message import Message
 from src.communication.node_communicator import NodeCommunicator
@@ -10,9 +10,6 @@ from src.graph.local_graph import LocalGraph
 from src.metrics.metrics_collector import MetricsCollector
 from src.config import DistributedAlgorithmConfig
 from src.simulation.local_node_context import LocalNodeContext
-
-if TYPE_CHECKING:
-    from src.meta.core.canonical_vector import CanonicalVector
 
 
 class DistributedNode:
@@ -87,22 +84,14 @@ class DistributedNode:
         # Track should_stop for autonomous loop (Phase 1)
         self.should_stop = False
 
-    def run_autonomous(self, canonical_vector: "CanonicalVector | None" = None) -> None:
+    def run_autonomous(self) -> None:
         """PHASE 1: Node's autonomous execution loop.
 
         This is the core autonomous agent behavior - the node runs its own complete
         algorithm loop without orchestrator control. Each node makes all its own
         decisions and only communicates via messages.
 
-        Args:
-            canonical_vector: Parameter vector for algorithm configuration (optional)
         """
-        from src.meta.core.canonical_vector import CanonicalVector
-
-        if canonical_vector is None:
-            canonical_vector = CanonicalVector()
-
-        max_iterations = int(canonical_vector.get("max_iterations") or 100)
         executed_iterations = 0
 
         # Run autonomous rounds until this node decides to stop or reaches its
@@ -111,17 +100,17 @@ class DistributedNode:
         while (
             not self.should_stop
             and not self.finished
-            and executed_iterations < max_iterations
+            and executed_iterations < self.algorithm_config.max_iterations
         ):
             # Execute one round (PHASE 0-5 all happen in execute_distributed_round)
-            continue_running, _ = self.execute_distributed_round(canonical_vector)
+            continue_running, _ = self.execute_distributed_round()
             executed_iterations += 1
 
             # Check if node should stop
             if not continue_running or self.finished:
                 self.should_stop = True
 
-        if executed_iterations >= max_iterations and self.is_active():
+        if executed_iterations >= self.algorithm_config.max_iterations and self.is_active():
             self.should_stop = True
 
     def is_active(self) -> bool:
@@ -179,7 +168,7 @@ class DistributedNode:
                 return False, f"Algorithm '{algo_name}' not registered in this process"
         return True, ""
 
-    def execute_distributed_round(self, canonical_vector) -> Tuple[bool, str]:
+    def execute_distributed_round(self) -> Tuple[bool, str]:
         """
         NEW PHASED EXECUTION (Protocol-Driven Merge).
 
@@ -190,9 +179,6 @@ class DistributedNode:
         PHASE 3: ALWAYS call conflict_solution() (Protocol Consistency)
         PHASE 4: Send confirmation messages (Phase 2 two-phase commit)
         PHASE 5: Check convergence
-
-        Args:
-            canonical_vector: CanonicalVector with parameters for all algorithms
 
         Returns:
             (continue_running, status_message)

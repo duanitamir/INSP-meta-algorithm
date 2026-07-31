@@ -483,7 +483,7 @@ class UnifiedAlgorithmParameterizer(BaseParameterizer):
 
         # The distributed runtime exposes only its immutable startup config.
         # It never gives an algorithm a global vector or state repository.
-        params = context.config.get_algorithm_params(self.algorithm_type).copy()
+        params = dict(context.config.get_algorithm_params(self.algorithm_type))
 
         # Create algorithm and get proposals (works identically for all algorithms)
         algo = algo_class(parameters=params if params else None)

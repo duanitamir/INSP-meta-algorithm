@@ -1,205 +1,101 @@
-"""Immutable-at-startup algorithm configuration for distributed nodes.
+"""Frozen startup configuration for one distributed matching run."""
 
-Parameters come from CanonicalVector during GA optimization and are held by
-each node for the duration of one runtime execution.
-"""
-
-from dataclasses import dataclass, asdict, field
-from typing import Dict, Any, List
+from dataclasses import dataclass, field
+from types import MappingProxyType
+from typing import Any, Mapping
 
 
-@dataclass
+@dataclass(frozen=True)
 class DistributedAlgorithmConfig:
-    """Algorithm parameters carried by each node for one runtime execution.
+    """Parameters shared by nodes for the lifetime of one runtime execution."""
 
-    Stores all algorithm parameters dynamically in algorithm_parameters dict.
-    No hardcoded fields - supports any algorithm combination.
-
-    Structure:
-    - algorithm_parameters: Dict[algo_name -> Dict[param_name -> value]]
-      Example: {"greedy": {"max_rounds": 100}, "itai": {"timeout_rounds": 5, ...}, ...}
-    - Convergence detection thresholds (when to stop)
-    - Algorithm list for dynamic discovery
-    - Schema metadata for serialized startup snapshots
-    """
-
-    # Convergence detection (shared, not algorithm-specific)
     convergence_threshold: float = 0.05
     quorum_threshold: float = 0.5
     max_iterations: int = 100
-
-    # Versioned source contract for this immutable-at-startup configuration.
     schema_version: int = 1
     vector_fingerprint: str = ""
+    available_algorithms: tuple[str, ...] = ()
+    algorithm_parameters: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
 
-    # Algorithm parameters (100% agnostic - dynamic storage, not hardcoded)
-    algorithm_parameters: Dict[str, Dict[str, Any]] = field(default_factory=dict)
-    # Example: {"greedy": {"max_rounds": 100}, "itai": {...}, "luby": {...}}
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "available_algorithms", tuple(self.available_algorithms))
+        object.__setattr__(
+            self,
+            "algorithm_parameters",
+            MappingProxyType(
+                {
+                    algorithm: MappingProxyType(dict(parameters))
+                    for algorithm, parameters in self.algorithm_parameters.items()
+                }
+            ),
+        )
 
-    # Legacy serialization fields retained for backwards-compatible payloads.
-    version: int = 1
+    def get_algorithm_params(self, algorithm: str) -> Mapping[str, Any]:
+        """Return the frozen parameters for one configured algorithm."""
+        return self.algorithm_parameters.get(algorithm, MappingProxyType({}))
 
-    # Algorithm list version for gossip protocol (algorithms discovered from registry)
-    algorithm_list_version: int = 1  # Separate version for algorithm list
-    _cached_algorithms: List[str] = field(default_factory=list, init=False, repr=False)
+    def get_parameter(self, algorithm: str, parameter: str, default: Any = None) -> Any:
+        """Return one configured parameter or its explicit default."""
+        return self.get_algorithm_params(algorithm).get(parameter, default)
 
-    @property
-    def available_algorithms(self) -> List[str]:
-        """Get available algorithms from registry (or cache if from gossip).
+    def has_parameters_for(self, algorithm: str) -> bool:
+        """Return whether the startup snapshot contains algorithm parameters."""
+        return algorithm in self.algorithm_parameters
 
-        Returns:
-            List of algorithm names discovered from AlgorithmRegistry
-        """
-        # If we have cached algorithms (from gossip), use them
-        if self._cached_algorithms:
-            return self._cached_algorithms
-
-        # Otherwise, discover from registry
-        from src.meta.core.algorithm_registry import AlgorithmRegistry
-        registry = AlgorithmRegistry.instance()
-        return registry.all_algorithm_names()
-
-    @available_algorithms.setter
-    def available_algorithms(self, value: List[str]) -> None:
-        """Set available algorithms (used when merging from gossip).
-
-        Args:
-            value: List of algorithm names
-        """
-        self._cached_algorithms = value if value else []
-
-    def has_algorithm_updates(self, other: "DistributedAlgorithmConfig") -> bool:
-        """Check if another config has different algorithm list.
-
-        Args:
-            other: Another DistributedAlgorithmConfig to compare
-
-        Returns:
-            True if the algorithm lists differ
-        """
-        return set(self.available_algorithms or []) != set(other.available_algorithms or [])
-
-    def merge_algorithm_list(self, other: "DistributedAlgorithmConfig") -> None:
-        """Merge algorithm list from neighbor config (higher version wins).
-
-        Args:
-            other: Another DistributedAlgorithmConfig to merge from
-        """
-        if other.algorithm_list_version > self.algorithm_list_version:
-            self.available_algorithms = (other.available_algorithms or []).copy()
-            self.algorithm_list_version = other.algorithm_list_version
-
-    def get_algorithm_params(self, algo_name: str) -> Dict[str, Any]:
-        """Get parameters for a specific algorithm.
-
-        Args:
-            algo_name: Algorithm name (e.g., "greedy", "itai", "luby")
-
-        Returns:
-            Dict of parameters for this algorithm, empty if not found
-        """
-        return self.algorithm_parameters.get(algo_name, {})
-
-    def set_algorithm_params(self, algo_name: str, params: Dict[str, Any]) -> None:
-        """Set parameters for a specific algorithm.
-
-        Args:
-            algo_name: Algorithm name
-            params: Dict of parameters to set
-        """
-        self.algorithm_parameters[algo_name] = params
-
-    def get_parameter(self, algo_name: str, param_name: str, default: Any = None) -> Any:
-        """Get a specific parameter for an algorithm.
-
-        Args:
-            algo_name: Algorithm name
-            param_name: Parameter name
-            default: Default value if not found
-
-        Returns:
-            Parameter value or default
-        """
-        algo_params = self.algorithm_parameters.get(algo_name, {})
-        return algo_params.get(param_name, default)
-
-    def has_parameters_for(self, algo_name: str) -> bool:
-        """Check if this config has parameters for an algorithm.
-
-        Args:
-            algo_name: Algorithm name
-
-        Returns:
-            True if parameters exist for this algorithm
-        """
-        return algo_name in self.algorithm_parameters
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for serialization (excludes non-init fields)."""
-        # Use asdict but filter out non-init fields like _cached_algorithms
-        d = asdict(self)
-        # Remove fields that aren't part of __init__
-        d.pop('_cached_algorithms', None)
-        return d
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize only the configuration snapshot used by a run."""
+        return {
+            "convergence_threshold": self.convergence_threshold,
+            "quorum_threshold": self.quorum_threshold,
+            "max_iterations": self.max_iterations,
+            "schema_version": self.schema_version,
+            "vector_fingerprint": self.vector_fingerprint,
+            "available_algorithms": list(self.available_algorithms),
+            "algorithm_parameters": {
+                algorithm: dict(parameters)
+                for algorithm, parameters in self.algorithm_parameters.items()
+            },
+        }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "DistributedAlgorithmConfig":
-        """Create from dictionary (after deserialization)."""
-        # Filter out any non-init fields
-        data_copy = data.copy()
-        data_copy.pop('_cached_algorithms', None)
-        return cls(**data_copy)
+    def from_dict(cls, data: Mapping[str, Any]) -> "DistributedAlgorithmConfig":
+        """Restore a serialized startup snapshot."""
+        return cls(
+            convergence_threshold=float(data.get("convergence_threshold", 0.05)),
+            quorum_threshold=float(data.get("quorum_threshold", 0.5)),
+            max_iterations=int(data.get("max_iterations", 100)),
+            schema_version=int(data.get("schema_version", 1)),
+            vector_fingerprint=str(data.get("vector_fingerprint", "")),
+            available_algorithms=tuple(data.get("available_algorithms", ())),
+            algorithm_parameters=data.get("algorithm_parameters", {}),
+        )
 
     @classmethod
-    def from_canonical_vector(cls, vector) -> "DistributedAlgorithmConfig":
-        """Create from CanonicalVector for GA optimization.
-
-        Auto-discovers available algorithms and their parameters from AlgorithmRegistry.
-        100% agnostic - no hardcoded algorithm extraction.
-
-        Args:
-            vector: CanonicalVector with all GA parameters
-
-        Returns:
-            DistributedAlgorithmConfig with parameters extracted dynamically
-        """
+    def from_canonical_vector(cls, vector: Any) -> "DistributedAlgorithmConfig":
+        """Create one frozen configuration snapshot from a canonical vector."""
         from src.meta.core.algorithm_registry import AlgorithmRegistry
 
         registry = AlgorithmRegistry.instance()
-        available_algos = registry.all_algorithm_names()  # Auto-discover!
+        available_algorithms = tuple(registry.all_algorithm_names())
+        algorithm_parameters: dict[str, dict[str, Any]] = {}
 
-        # Dynamically extract parameters for each algorithm
-        algorithm_parameters = {}
-        for algo_name in available_algos:
-            algo_def = registry.get(algo_name)
-            if not algo_def:
+        for algorithm in available_algorithms:
+            definition = registry.get(algorithm)
+            if definition is None:
                 continue
 
-            # Extract parameters for this algorithm from vector
-            params = {}
-            param_defs = algo_def.get("parameters", {})
-            for param_name in param_defs.keys():
-                # Build full parameter name (algorithm prefix + parameter name)
-                full_param_name = f"{algo_name}_{param_name}"
+            parameters = {
+                parameter: value
+                for parameter in definition.get("parameters", {})
+                if (value := vector.get(f"{algorithm}_{parameter}")) is not None
+            }
+            if parameters:
+                algorithm_parameters[algorithm] = parameters
 
-                # Try to extract from vector
-                value = vector.get(full_param_name)
-                if value is not None:
-                    params[param_name] = value
-
-            if params:  # Only add if we found parameters
-                algorithm_parameters[algo_name] = params
-
-        config = cls(
+        return cls(
             convergence_threshold=vector.get("convergence_threshold") or 0.05,
-            quorum_threshold=0.5,  # Default (not in CanonicalVector)
             max_iterations=int(vector.get("max_iterations") or 100),
-            schema_version=1,
             vector_fingerprint=vector.fingerprint(),
-            algorithm_parameters=algorithm_parameters,  # Dynamic storage
-            version=1,
-            algorithm_list_version=1
+            available_algorithms=available_algorithms,
+            algorithm_parameters=algorithm_parameters,
         )
-        # Cache the discovered algorithms
-        config.available_algorithms = available_algos
-        return config
