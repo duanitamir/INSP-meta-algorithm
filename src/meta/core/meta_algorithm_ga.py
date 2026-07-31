@@ -2,12 +2,15 @@
 
 import random
 from concurrent.futures import ThreadPoolExecutor
-from typing import List, NamedTuple, Tuple, Optional
+from typing import TYPE_CHECKING, List, NamedTuple, Tuple, Optional
 
 from src.graph.graph_manager import GraphManager
 from src.meta.core.canonical_vector import CanonicalVector
 from src.meta.core.evaluation_suite import EvaluationSuite
 from src.meta.core.fitness_evaluator import FitnessEvaluator
+
+if TYPE_CHECKING:
+    from src.meta.config import MetaConfig
 
 
 class PopulationEvaluation(NamedTuple):
@@ -32,6 +35,7 @@ class MetaAlgorithmGA:
         self,
         fitness_evaluator: FitnessEvaluator | None = None,
         evaluation_suite: EvaluationSuite | None = None,
+        config: "MetaConfig | None" = None,
         population_size: int = 20,
         generations: int = 10,
         mutation_rate: float = 0.1,
@@ -46,6 +50,7 @@ class MetaAlgorithmGA:
         Args:
             fitness_evaluator: FitnessEvaluator instance (if None, creates one based on flags)
             evaluation_suite: Optional graph-family suite used to score every candidate
+            config: Optional MetaConfig for named GA configuration
             population_size: Number of vectors in population
             generations: Number of generations to evolve
             mutation_rate: Base mutation probability per parameter [0, 1]
@@ -56,6 +61,20 @@ class MetaAlgorithmGA:
                           If False, use standard evaluator (single pass on full graph)
             algorithms: Optional list of Algorithms enum values to optimize for
         """
+        if config is not None:
+            is_valid, error = config.validate()
+            if not is_valid:
+                raise ValueError(f"Invalid MetaConfig: {error}")
+            ga_config = config.ga_config
+            population_size = ga_config.population_size
+            generations = ga_config.generations
+            mutation_rate = ga_config.mutation_rate
+            elite_fraction = ga_config.elite_fraction
+            early_stop_generations = ga_config.early_stop_generations
+            num_workers = ga_config.num_workers
+            use_cascading = ga_config.use_cascading
+            algorithms = config.algorithms
+
         self.algorithms = algorithms
         self.evaluation_suite = evaluation_suite
 

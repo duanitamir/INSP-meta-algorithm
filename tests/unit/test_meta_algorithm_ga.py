@@ -4,6 +4,7 @@ import pytest
 from src.meta.core.meta_algorithm_ga import MetaAlgorithmGA
 from src.meta.core.fitness_evaluator import FitnessEvaluator
 from src.meta.core.canonical_vector import CanonicalVector
+from src.meta.config import GAConfig, MetaConfig
 from src.graph.graph_manager import GraphManager
 
 
@@ -21,6 +22,30 @@ class TestMetaAlgorithmGABasics:
         evaluator = FitnessEvaluator()
         ga = MetaAlgorithmGA(evaluator)
         assert ga.name() == "MetaAlgorithmGA"
+
+    def test_initialization_from_meta_config(self) -> None:
+        """MetaConfig should configure the supported GA constructor."""
+        config = MetaConfig(
+            ga_config=GAConfig(
+                population_size=7,
+                generations=3,
+                mutation_rate=0.2,
+                elite_fraction=0.4,
+                early_stop_generations=2,
+                num_workers=1,
+                use_cascading=False,
+            )
+        )
+
+        ga = MetaAlgorithmGA(config=config)
+
+        assert ga.population_size == 7
+        assert ga.generations == 3
+        assert ga.base_mutation_rate == 0.2
+        assert ga.elite_fraction == 0.4
+        assert ga.early_stop_generations == 2
+        assert ga.num_workers == 1
+        assert ga.algorithms == config.algorithms
 
 
 class TestMetaAlgorithmGAEvolution:
