@@ -8,6 +8,7 @@ from src.communication.transport import InMemoryTransport
 from src.graph.graph_manager import GraphManager
 from src.graph.local_graph import LocalGraph
 from src.metrics.metrics_collector import MetricsCollector
+from src.algorithms.proposal_policy import build_local_proposal_policies
 from src.config import DistributedAlgorithmConfig
 from src.simulation.endpoint_protocol import EndpointProtocol
 from src.simulation.local_convergence import LocalConvergence
@@ -51,6 +52,7 @@ class DistributedNode:
 
         # Algorithm configuration is an immutable-at-startup snapshot.
         self.algorithm_config = algorithm_config or DistributedAlgorithmConfig()
+        self.proposal_policies = build_local_proposal_policies(self.algorithm_config)
 
         # State (this node's algorithm state)
         self.state = NodeState(node_id)
@@ -193,20 +195,6 @@ class DistributedNode:
             neighbor_id, weight, self.local_time, self.round_number
         )
 
-    def _validate_available_algorithms(self) -> Tuple[bool, str]:
-        """Validate that all configured algorithms are registered in this process.
-
-        Returns:
-            Tuple of (is_valid, error_message). If valid, error_message is None.
-        """
-        from src.meta.core.algorithm_registry import AlgorithmRegistry
-
-        registry = AlgorithmRegistry.instance()
-        for algo_name in self.algorithm_config.available_algorithms:
-            if not registry.is_algorithm_registered(algo_name):
-                return False, f"Algorithm '{algo_name}' not registered in this process"
-        return True, ""
-
     def execute_distributed_round(self) -> Tuple[bool, str]:
         """
         NEW PHASED EXECUTION (Protocol-Driven Merge).
@@ -225,35 +213,17 @@ class DistributedNode:
         if self.finished:
             return False, "already_finished"
 
-        # Validate that all configured algorithms are available
-        is_valid, error = self._validate_available_algorithms()
-        if not is_valid:
-            return False, f"algorithm_validation_error: {error}"
-
         # PHASE 0: Process incoming messages
         messages = self.communicator.receive_messages()
         self._process_coordination_messages(messages)
         self._process_protocol_messages(messages)
         self._expire_tentative_match_if_needed()
 
-        # PHASE 1: Get proposals from each algorithm (LOCAL SCOPE ONLY - neighbors)
-        from src.meta.parameterizers.algorithm_parameterizer import UnifiedAlgorithmParameterizer
-
-        # FIXED (Task 8.3): Read from config instead of hardcoding
-        parameterizers = [
-            UnifiedAlgorithmParameterizer(algo_name)
-            for algo_name in self.algorithm_config.available_algorithms
-        ]
-        neighbors = self.graph.neighbors()
+        # PHASE 1: Get proposals from each cached local policy.
         context = self._create_context(messages)
-
-        proposals_per_algorithm = {}
-        for param in parameterizers:
-            # Each algorithm proposes ONLY to neighbors (local scope). Unexpected
-            # failures must surface rather than being mistaken for no proposal.
-            algo_name = param.name()
-            proposals = param.propose_to_neighbors(self.id, neighbors, context)
-            proposals_per_algorithm[algo_name] = proposals
+        proposals_per_algorithm = {
+            policy.name: policy.propose(context) for policy in self.proposal_policies
+        }
 
         # PHASE 2: Accumulate proposals from all algorithms
         self.pending_proposals.clear()
