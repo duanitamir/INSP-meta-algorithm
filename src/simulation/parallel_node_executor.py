@@ -68,7 +68,7 @@ class ParallelNodeExecutor:
         outcome = RuntimeOutcome(
             scheduled_ticks=scheduled_ticks,
             active_node_ids=active_node_ids,
-            watchdog_exhausted=scheduled_ticks >= max_ticks,
+            watchdog_exhausted=scheduled_ticks >= max_ticks and bool(active_node_ids),
         )
         self.last_outcome = outcome
         return outcome
