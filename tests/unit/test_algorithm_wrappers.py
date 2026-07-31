@@ -1,6 +1,5 @@
 """Unit tests for algorithm parameterizer wrappers - 15+ comprehensive tests."""
 
-import pytest
 from src.meta.core.canonical_vector import CanonicalVector
 from src.meta.parameterizers.algorithm_parameterizer import UnifiedAlgorithmParameterizer
 from src.graph.graph_manager import GraphManager

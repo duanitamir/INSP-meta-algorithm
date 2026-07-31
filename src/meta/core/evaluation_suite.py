@@ -7,7 +7,7 @@ from statistics import mean, pstdev
 from typing import TYPE_CHECKING, Sequence
 
 from src.graph.graph_manager import GraphManager
-from src.meta.core.vector_evaluator import EvaluationResult, VectorEvaluator
+from src.meta.core.vector_evaluator import VectorEvaluator
 
 if TYPE_CHECKING:
     from src.meta.core.canonical_vector import CanonicalVector

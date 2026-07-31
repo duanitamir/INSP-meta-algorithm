@@ -65,7 +65,6 @@ class DistributedCascadingEvaluator:
         # Initialize matched nodes tracking
         already_matched_nodes = set()
 
-        prev_weight = 0.0
         weight_per_round = []
         cascade_round = 0
         total_weight = 0.0  # Accumulate weight across ALL cascades
@@ -106,8 +105,6 @@ class DistributedCascadingEvaluator:
             for u, v in matching.items():
                 already_matched_nodes.add(u)
                 already_matched_nodes.add(v)
-
-            prev_weight = curr_weight
 
         # Store details for analysis
         self.last_num_cascades = cascade_round + 1

@@ -1,4 +1,3 @@
-import pytest
 from src.metrics import MetricsCollector, MetricsSnapshot
 from src.utils.types import RoundNumber
 

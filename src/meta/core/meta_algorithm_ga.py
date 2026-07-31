@@ -112,9 +112,6 @@ class MetaAlgorithmGA:
         # Baseline is the default CanonicalVector (which represents optimal defaults)
         baseline_vector = CanonicalVector()
 
-        # Evaluate baseline to get true fitness on this graph
-        baseline_fitness = self._evaluate_candidate(graph, baseline_vector)
-
         # Create initial population: baseline + diverse random vectors
         population = [baseline_vector] + [CanonicalVector() for _ in range(self.population_size - 1)]
 

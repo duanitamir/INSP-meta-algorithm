@@ -1,5 +1,4 @@
 import pytest
-from src.graph import GraphManager
 from src.communication import Message, MessageQueue
 from src.utils.types import RoundNumber
 

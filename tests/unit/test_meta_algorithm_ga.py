@@ -1,6 +1,5 @@
 """Unit tests for MetaAlgorithmGA - 8+ comprehensive tests."""
 
-import pytest
 from src.meta.core.meta_algorithm_ga import MetaAlgorithmGA
 from src.meta.core.fitness_evaluator import FitnessEvaluator
 from src.meta.core.canonical_vector import CanonicalVector

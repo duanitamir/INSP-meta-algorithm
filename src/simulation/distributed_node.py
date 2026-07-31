@@ -1,6 +1,6 @@
 """Fully distributed node for autonomous algorithm execution and coordination."""
 
-from typing import Dict, List, Tuple, Any
+from typing import TYPE_CHECKING, Any, Dict, List, Tuple
 from src.state.node import NodeState
 from src.communication.message import Message
 from src.communication.node_communicator import NodeCommunicator
@@ -10,6 +10,9 @@ from src.graph.local_graph import LocalGraph
 from src.metrics.metrics_collector import MetricsCollector
 from src.config import DistributedAlgorithmConfig
 from src.simulation.local_node_context import LocalNodeContext
+
+if TYPE_CHECKING:
+    from src.meta.core.canonical_vector import CanonicalVector
 
 
 class DistributedNode:
@@ -84,7 +87,7 @@ class DistributedNode:
         # Track should_stop for autonomous loop (Phase 1)
         self.should_stop = False
 
-    def run_autonomous(self, canonical_vector: CanonicalVector = None) -> None:
+    def run_autonomous(self, canonical_vector: "CanonicalVector | None" = None) -> None:
         """PHASE 1: Node's autonomous execution loop.
 
         This is the core autonomous agent behavior - the node runs its own complete

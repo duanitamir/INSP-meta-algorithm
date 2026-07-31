@@ -3,7 +3,6 @@
 Tests parallel evaluation, adaptive mutation, early stopping, and tunable elite fraction.
 """
 
-import pytest
 
 from src.graph.graph_manager import GraphManager
 from src.meta.core.canonical_vector import CanonicalVector

@@ -6,7 +6,7 @@ Provides:
 - MetaConfig: Combined configuration for algorithm selection + GA parameters
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List, Tuple, Optional
 
 # Import Algorithms enum from where algorithms are registered (single source of truth)

@@ -5,7 +5,6 @@ Discovers and executes all registered algorithms without hardcoded algorithm ref
 """
 
 import os
-import random
 from typing import Any, Dict, Tuple, List
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -216,8 +215,6 @@ class UnifiedAlgorithmParameterizer(BaseParameterizer):
 
             # Loop through rounds until convergence or max_rounds
             for round_num in range(max_rounds):
-                any_messages_sent = False
-
                 # CRITICAL: Get all messages BEFORE parallel execution to avoid race conditions
                 # (MessageQueue.get_messages() clears inbox - must be done before parallel threads access it)
                 node_ids = list(graph.vertices())
@@ -286,7 +283,6 @@ class UnifiedAlgorithmParameterizer(BaseParameterizer):
                         execution_updates[node_id] = new_state
                         if out_messages:
                             message_queue.send_batch(out_messages)
-                            any_messages_sent = True
                     except Exception as e:
                         print(f"Error executing node {node_id}: {e}")
 

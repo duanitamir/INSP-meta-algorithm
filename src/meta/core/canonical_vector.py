@@ -11,7 +11,7 @@ evolves whatever parameters are available in the AlgorithmRegistry.
 import hashlib
 import json
 import random
-from typing import Tuple, List, Dict, Union, Any
+from typing import Tuple, List, Dict, Any
 
 
 class CanonicalVector:

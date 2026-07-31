@@ -5,7 +5,7 @@ for computing optimal matching weights and quality metrics.
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional
 import networkx as nx
 from src.graph.graph_manager import GraphManager
 
@@ -55,7 +55,7 @@ class GraphFixtureBase(ABC):
                 self._optimal_matching[u] = v
                 self._optimal_matching[v] = u
             self._optimal_weight = self.graph.calculate_matching_weight(self._optimal_matching)
-        except Exception as e:
+        except Exception:
             # If graph is empty or invalid, set empty
             self._optimal_matching = {}
             self._optimal_weight = 0.0
