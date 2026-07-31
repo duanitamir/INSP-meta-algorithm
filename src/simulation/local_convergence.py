@@ -28,6 +28,7 @@ class LocalConvergence:
         self.quorum_threshold = quorum_threshold
         self.vote: bool | None = None
         self.known_votes: dict[int, bool] = {}
+        self.known_vote_rounds: dict[int, int] = {}
         self.last_matching_weight = 0.0
 
     def reset(self, state: NodeState) -> None:
@@ -35,6 +36,7 @@ class LocalConvergence:
         self.state = state
         self.vote = None
         self.known_votes.clear()
+        self.known_vote_rounds.clear()
         self.last_matching_weight = 0.0
 
     def process_messages(self, messages: Sequence[Message]) -> None:
@@ -43,7 +45,10 @@ class LocalConvergence:
             if message.sender not in self.graph.neighbors() or not isinstance(message.payload, dict):
                 continue
             if message.payload.get("type") == "CONVERGENCE_VOTE":
+                if message.round_num <= self.known_vote_rounds.get(message.sender, -1):
+                    continue
                 self.known_votes[message.sender] = bool(message.payload.get("vote", False))
+                self.known_vote_rounds[message.sender] = message.round_num
 
     def decide(self, round_number: int) -> None:
         """Calculate this node's stop/continue vote from its local matching state."""

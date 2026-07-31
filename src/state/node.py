@@ -15,6 +15,8 @@ class NodeState:
     PROPOSAL_PENDING = "proposal_pending"
     TENTATIVE_PARTNER = "tentative_partner"
     PROPOSAL_DEADLINE = "proposal_deadline"
+    PROPOSAL_ATTEMPT = "proposal_attempt"
+    NEGOTIATION_EPOCH = "negotiation_epoch"
 
     def __init__(self, node_id: int):
         """Initialize node state.
@@ -165,17 +167,32 @@ class NodeState:
         """
         return self._state.get("matched_to") is not None
 
-    def begin_tentative_match(self, partner_id: int, deadline: int, *, proposing: bool) -> None:
-        """Record this endpoint's local, not-yet-final match agreement."""
+    def begin_tentative_match(
+        self,
+        partner_id: int,
+        deadline: int,
+        *,
+        proposing: bool,
+        attempt: int | None = None,
+    ) -> int:
+        """Record a local negotiation and return its monotonic attempt identity."""
+        previous_epoch = int(self.get(self.NEGOTIATION_EPOCH, 0))
+        attempt = previous_epoch + 1 if attempt is None else int(attempt)
+        if attempt < 0:
+            raise ValueError("Proposal attempt must be non-negative")
+        self.set(self.NEGOTIATION_EPOCH, max(previous_epoch, attempt))
         self.set(self.TENTATIVE_PARTNER, partner_id)
         self.set(self.PROPOSAL_DEADLINE, deadline)
         self.set(self.PROPOSAL_PENDING, proposing)
+        self.set(self.PROPOSAL_ATTEMPT, attempt)
+        return attempt
 
     def clear_tentative_match(self) -> None:
         """Clear local negotiation state without changing a final match."""
         self.delete(self.TENTATIVE_PARTNER)
         self.delete(self.PROPOSAL_DEADLINE)
         self.delete(self.PROPOSAL_PENDING)
+        self.delete(self.PROPOSAL_ATTEMPT)
 
     # Serialization & Utilities
 
