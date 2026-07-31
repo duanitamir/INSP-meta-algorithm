@@ -6,7 +6,7 @@ from src.graph.graph_manager import GraphManager
 from src.meta.core.canonical_vector import CanonicalVector
 from src.meta.core.fitness_evaluator import FitnessEvaluator
 from src.meta.core.distributed_cascading_evaluator import DistributedCascadingEvaluator
-from src.meta.parameterizers.algorithm_parameterizer import UnifiedAlgorithmParameterizer
+from src.meta.core.vector_evaluator import DistributedRuntimeEvaluator
 
 
 def get_optimal_weight(fixture_dict) -> float:
@@ -76,16 +76,13 @@ def get_individual_algorithm_weights(graph: GraphManager, selected_algorithms) -
     Returns:
         Dictionary mapping algorithm name to weight
     """
-    vector = CanonicalVector(algorithms=selected_algorithms)
+    algorithm_names = tuple(getattr(algorithm, "value", algorithm) for algorithm in selected_algorithms)
+    selected_vector = CanonicalVector(algorithms=algorithm_names)
+    evaluator = DistributedRuntimeEvaluator(max_workers=1)
     results = {}
 
-    # Only compute for selected algorithms
-    algo_names_list = [a.value for a in selected_algorithms]
-
-    for algo_type in algo_names_list:
-        param = UnifiedAlgorithmParameterizer(algo_type)
-        matching = param.execute(graph, vector)
-        weight = sum(graph.get_edge_weight(u, v) for u, v in matching.items() if u < v)
-        results[algo_type] = weight
+    for algorithm_name in algorithm_names:
+        vector = CanonicalVector.from_dict(selected_vector.to_dict(), algorithms=(algorithm_name,))
+        results[algorithm_name] = evaluator.evaluate(graph, vector).score
 
     return results

@@ -1,7 +1,7 @@
 """Edge inspection and matching analysis utilities."""
 
-from src.meta.parameterizers.algorithm_parameterizer import UnifiedAlgorithmParameterizer
-from src.meta.core.matching_merger import merge_matchings
+from src.meta.core.canonical_vector import CanonicalVector
+from src.meta.core.vector_evaluator import DistributedRuntimeEvaluator
 
 
 def inspect_matched_edges(
@@ -40,16 +40,17 @@ def inspect_matched_edges(
 
     print('\n' + '-'*100 + '\n')
 
-    # Inspect individual algorithms
-    algo_names_list = [a.value for a in selected_algorithms]
+    # Inspect individual distributed-runtime evaluations.
+    algo_names_list = [getattr(algorithm, "value", algorithm) for algorithm in selected_algorithms]
+    evaluator = DistributedRuntimeEvaluator(max_workers=1)
     individual_results = {}
 
     for algo_name in algo_names_list:
         print(f'{algo_name.upper()} Algorithm Matching')
         print('-'*100)
 
-        param = UnifiedAlgorithmParameterizer(algo_name)
-        matching = param.execute(graph, best_vector)
+        vector = CanonicalVector.from_dict(best_vector.to_dict(), algorithms=(algo_name,))
+        matching = dict(evaluator.evaluate(graph, vector).matching)
 
         total_weight = sum(
             graph.get_edge_weight(u, v) for u, v in matching.items() if u < v
@@ -81,18 +82,11 @@ def inspect_matched_edges(
         print()
 
     print('-'*100)
-    print('MERGED RESULT - SELECTED Algorithms Combined (with conflict resolution)')
+    print('COMBINED DISTRIBUTED RESULT - SELECTED Algorithms')
     print(f'Selected: {", ".join(algo_names_list)}')
     print('-'*100 + '\n')
 
-    # Merge results
-    matchings = []
-    for algo_name in algo_names_list:
-        param = UnifiedAlgorithmParameterizer(algo_name)
-        matching = param.execute(graph, best_vector)
-        matchings.append(matching)
-
-    merged = merge_matchings(matchings, graph)
+    merged = dict(evaluator.evaluate(graph, best_vector).matching)
     total_weight = sum(graph.get_edge_weight(u, v) for u, v in merged.items() if u < v)
 
     print(f'Total edges in merged result: {len(merged) // 2}')
