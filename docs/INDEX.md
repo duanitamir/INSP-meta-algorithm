@@ -2,6 +2,11 @@
 
 ## Start Here
 
+The current runtime architecture is defined exclusively by
+[DISTRIBUTED_EXECUTION_SOURCE_OF_TRUTH.md](../DISTRIBUTED_EXECUTION_SOURCE_OF_TRUTH.md).
+The phase documents below are historical implementation references unless that
+document explicitly adopts them.
+
 **[ALGORITHM_FLOW.md](ALGORITHM_FLOW.md)** ⭐ — 5-minute overview of the entire system
 - High-level process flow
 - Key concepts
@@ -11,7 +16,7 @@
 
 ## Quick Navigation
 
-### Phase 1: Distributed Matching Algorithms (Implemented ✅)
+### Historical Phase 1: Distributed Matching Algorithms
 
 Core framework and three working algorithms:
 
@@ -34,7 +39,7 @@ Utilities:
 
 ---
 
-### Phase 2: Meta-Algorithm (✅ Complete)
+### Historical Phase 2: Meta-Algorithm
 
 Centralized orchestration layer combining multiple algorithms with automatic parameter tuning.
 
@@ -60,6 +65,11 @@ The current runtime is defined by
 - **DistributedNode** — Owns endpoint matching protocol and local convergence
 - **InMemoryTransport** — Recipient-scoped, destructive message delivery
 - **ParallelNodeExecutor** — Schedules ready nodes without an algorithmic barrier
+
+### Offline Evaluation
+
+- **[EVALUATION_PROTOCOL.md](EVALUATION_PROTOCOL.md)** — Graph-family profiles,
+  train/validation/holdout splits, and robust score reporting
 
 ---
 
@@ -96,7 +106,7 @@ The current runtime is defined by
 
 ## Implementation Status
 
-### Phase 1 ✅ Complete (94% test coverage)
+### Historical Phase 1 status
 
 | Component | Files | Tests | Status |
 |-----------|-------|-------|--------|
@@ -106,7 +116,7 @@ The current runtime is defined by
 | Luby | LUBY_RANDOMIZED | 21/21 | ✅ |
 | Auction | (Not yet) | — | ⏳ |
 
-### Phase 2 ✅ Complete (93 tests, 89% coverage)
+### Historical Phase 2 status
 
 | Component | Tests | Coverage |
 |-----------|-------|----------|
@@ -120,7 +130,7 @@ The current runtime is defined by
 | GAConfig | 34 | 100% |
 | **Phase 2 Total** | **93** | **89%** |
 
-### Phase 3 ✅ Complete (87 tests, 100% coverage)
+### Historical Phase 3 status
 
 | Component | Tests | Coverage |
 |-----------|-------|----------|

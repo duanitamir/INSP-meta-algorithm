@@ -8,6 +8,7 @@ Contains:
 """
 
 from .canonical_vector import CanonicalVector
+from .graph_profile import GraphProfile
 from .fitness_evaluator import FitnessEvaluator
 from .vector_evaluator import (
     DistributedRuntimeEvaluator,
@@ -19,6 +20,7 @@ from .meta_algorithm_ga import MetaAlgorithmGA, PopulationEvaluation
 
 __all__ = [
     "CanonicalVector",
+    "GraphProfile",
     "FitnessEvaluator",
     "DistributedRuntimeEvaluator",
     "EvaluationResult",
