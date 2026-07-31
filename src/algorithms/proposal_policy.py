@@ -34,7 +34,11 @@ class RegisteredProposalPolicy:
         non_neighbors = set(proposals).difference(neighbors)
         if non_neighbors:
             raise ValueError(f"{self.name} proposed non-neighbors: {sorted(non_neighbors)}")
-        return proposals
+        return {
+            neighbor_id: weight
+            for neighbor_id, weight in proposals.items()
+            if context.state.is_neighbor_eligible(neighbor_id)
+        }
 
 
 def build_local_proposal_policies(

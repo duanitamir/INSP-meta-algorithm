@@ -185,8 +185,7 @@ class DistributedNode:
         self._expire_tentative_match_if_needed()
         self._decide_convergence()
         self._gossip_convergence_vote()
-        if self._should_stop_based_on_quorum():
-            self.finished = True
+        self._finish_if_terminal()
         self.advance_local_time()
 
     def start_proposal(self, neighbor_id: int, weight: float) -> None:
@@ -256,11 +255,8 @@ class DistributedNode:
         # Share this tick's local decision only after computing it.
         self._gossip_convergence_vote()
 
-        # PHASE 5: Check convergence
-        should_stop = self._should_stop_based_on_quorum()
-        if should_stop:
-            self.finished = True
-            return False, "quorum_converged"
+        if self._finish_if_terminal():
+            return False, "matched" if self.state.is_matched() else "terminal_unmatched"
 
         self.round_number += 1
         self.advance_local_time()
@@ -294,6 +290,15 @@ class DistributedNode:
     def _should_stop_based_on_quorum(self) -> bool:
         """Delegate the local-neighbor quorum decision."""
         return self.convergence.should_stop()
+
+    def _finish_if_terminal(self) -> bool:
+        """Finish only when this endpoint has no remaining matching work."""
+        if self.state.is_matched():
+            self.finished = True
+        elif self.endpoint_protocol.can_quiesce():
+            self.state.mark_terminal_unmatched()
+            self.finished = True
+        return self.finished
 
     def get_matching(self) -> Dict[int, int]:
         """Extract final matching from node state.

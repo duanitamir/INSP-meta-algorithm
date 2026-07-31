@@ -17,6 +17,8 @@ class NodeState:
     PROPOSAL_DEADLINE = "proposal_deadline"
     PROPOSAL_ATTEMPT = "proposal_attempt"
     NEGOTIATION_EPOCH = "negotiation_epoch"
+    TERMINAL_UNMATCHED = "terminal_unmatched"
+    UNAVAILABLE_NEIGHBORS = "unavailable_neighbors"
 
     def __init__(self, node_id: int):
         """Initialize node state.
@@ -166,6 +168,33 @@ class NodeState:
             True if node is matched, False otherwise
         """
         return self._state.get("matched_to") is not None
+
+    def mark_neighbor_unavailable(self, neighbor_id: int) -> None:
+        """Remember that a directly connected neighbor has a final match."""
+        unavailable = set(self.get(self.UNAVAILABLE_NEIGHBORS, set()))
+        unavailable.add(neighbor_id)
+        self.set(self.UNAVAILABLE_NEIGHBORS, frozenset(unavailable))
+
+    def is_neighbor_eligible(self, neighbor_id: int) -> bool:
+        """Return whether this endpoint can still start a match with a neighbor."""
+        return neighbor_id not in self.get(self.UNAVAILABLE_NEIGHBORS, frozenset())
+
+    def has_eligible_neighbor(self, neighbor_ids: list[int]) -> bool:
+        """Return whether any locally known neighbor can still be proposed to."""
+        return any(self.is_neighbor_eligible(neighbor_id) for neighbor_id in neighbor_ids)
+
+    def mark_terminal_unmatched(self) -> None:
+        """Record that this endpoint has no remaining local matching work."""
+        if not self.is_matched():
+            self.set(self.TERMINAL_UNMATCHED, True)
+
+    def is_terminal_unmatched(self) -> bool:
+        """Return whether this endpoint correctly finished without a partner."""
+        return bool(self.get(self.TERMINAL_UNMATCHED, False))
+
+    def is_terminal(self) -> bool:
+        """Return whether this endpoint is matched or permanently unmatched."""
+        return self.is_matched() or self.is_terminal_unmatched()
 
     def begin_tentative_match(
         self,

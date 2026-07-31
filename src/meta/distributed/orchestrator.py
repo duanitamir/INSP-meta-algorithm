@@ -68,8 +68,11 @@ class DistributedOrchestrator:
         matching, final_weight = self._collect_results(graph)
         if self._transport is None:
             raise RuntimeError("start() must create a transport")
+        quiescent = not outcome.watchdog_exhausted and all(
+            node.state.is_terminal() for node in self._nodes.values()
+        )
         return matching, {
-            "outcome": "watchdog_exhausted" if outcome.watchdog_exhausted else "nodes_stopped",
+            "outcome": "quiescent" if quiescent else "watchdog_exhausted",
             "scheduled_ticks": outcome.scheduled_ticks,
             "active_node_ids": outcome.active_node_ids,
             "iterations": outcome.scheduled_ticks,

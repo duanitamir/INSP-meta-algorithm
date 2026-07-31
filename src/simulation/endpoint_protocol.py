@@ -32,7 +32,11 @@ class EndpointProtocol:
         """Begin a local negotiation with one direct neighbor."""
         if neighbor_id not in self.graph.neighbors():
             raise ValueError(f"Node {neighbor_id} is not a neighbor of node {self.node_id}")
-        if self.state.is_matched() or self.state.get(NodeState.TENTATIVE_PARTNER) is not None:
+        if (
+            self.state.is_matched()
+            or not self.state.is_neighbor_eligible(neighbor_id)
+            or self.state.get(NodeState.TENTATIVE_PARTNER) is not None
+        ):
             return
         attempt = self.state.begin_tentative_match(
             neighbor_id,
@@ -63,7 +67,13 @@ class EndpointProtocol:
                     round_number,
                 )
             elif message_type == "REJECT":
-                self._receive_reject(message.sender, int(message.payload.get("attempt", 0)))
+                self._receive_reject(
+                    message.sender,
+                    int(message.payload.get("attempt", 0)),
+                    str(message.payload.get("reason", "busy")),
+                )
+            elif message_type == "MATCHED":
+                self.state.mark_neighbor_unavailable(message.sender)
             elif message_type == "CONFIRM":
                 self._receive_confirm(
                     message.sender,
@@ -104,7 +114,7 @@ class EndpointProtocol:
     ) -> None:
         if self.state.is_matched():
             for sender_id, _, attempt in proposals:
-                self._send(sender_id, "REJECT", round_number, attempt=attempt)
+                self._send(sender_id, "REJECT", round_number, attempt=attempt, reason="matched")
             return
 
         partner_id = self.state.get(NodeState.TENTATIVE_PARTNER)
@@ -159,12 +169,21 @@ class EndpointProtocol:
         )
         self._send(sender_id, "CONFIRM", round_number, attempt=attempt, acknowledgement=False)
 
-    def _receive_reject(self, sender_id: int, attempt: int) -> None:
+    def _receive_reject(self, sender_id: int, attempt: int, reason: str) -> None:
         if (
             self.state.get(NodeState.TENTATIVE_PARTNER) == sender_id
             and self.state.get(NodeState.PROPOSAL_ATTEMPT) == attempt
         ):
             self.state.clear_tentative_match()
+        if reason == "matched":
+            self.state.mark_neighbor_unavailable(sender_id)
+
+    def can_quiesce(self) -> bool:
+        """Return whether no local protocol work or eligible neighbor remains."""
+        return (
+            self.state.get(NodeState.TENTATIVE_PARTNER) is None
+            and not self.state.has_eligible_neighbor(self.graph.neighbors())
+        )
 
     def _receive_confirm(
         self, sender_id: int, acknowledgement: bool, attempt: int, round_number: int
@@ -176,6 +195,7 @@ class EndpointProtocol:
             return
         self.state.set_matched_to(sender_id)
         self.state.clear_tentative_match()
+        self._announce_final_match(sender_id, attempt, round_number)
         if not acknowledgement:
             self._send(sender_id, "CONFIRM", round_number, attempt=attempt, acknowledgement=True)
 
@@ -185,6 +205,18 @@ class EndpointProtocol:
             and self.state.get(NodeState.PROPOSAL_ATTEMPT) == attempt
         ):
             self.state.clear_tentative_match()
+
+    def _announce_final_match(self, partner_id: int, attempt: int, round_number: int) -> None:
+        """Tell direct non-partners that this endpoint is no longer eligible."""
+        for neighbor_id in self.graph.neighbors():
+            if neighbor_id != partner_id:
+                self._send(
+                    neighbor_id,
+                    "MATCHED",
+                    round_number,
+                    attempt=attempt,
+                    partner_id=partner_id,
+                )
 
     def _send(
         self, recipient_id: int, message_type: str, round_number: int, *, attempt: int, **payload: object
