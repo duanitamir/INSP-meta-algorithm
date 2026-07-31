@@ -44,6 +44,7 @@ class BenchmarkMeasurement:
     matching_cardinality: int
     message_count: int
     scheduled_ticks: int
+    terminal_node_count: int
     outcome: str
     elapsed_seconds: float
     mode: str
@@ -88,6 +89,7 @@ class ReproducibleBenchmarkSuite:
                     matching_cardinality=_matching_cardinality(result.matching),
                     message_count=int(report["message_count"]),
                     scheduled_ticks=int(report["scheduled_ticks"]),
+                    terminal_node_count=int(report["terminal_node_count"]),
                     outcome=outcome,
                     elapsed_seconds=elapsed_seconds,
                     mode=result.mode,

@@ -62,13 +62,10 @@ class GraphManager:
         """Get neighbors of a vertex.
 
         Args:
-            vertex_id: The vertex to get neighbors for
-            state_store: Optional StateStore to filter by node state
-            filter_active: If True and state_store provided, return only unmatched neighbors
+            vertex_id: The vertex to inspect.
 
         Returns:
-            FrozenSet of neighbor node IDs. If state_store and filter_active are provided,
-            returns only neighbors where is_matched() == False (i.e., active/unmatched nodes).
+            Immutable direct-neighbour IDs from the topology snapshot.
         """
         if vertex_id not in self._graph:
             raise ValueError(f"Vertex {vertex_id} not in graph")

@@ -75,6 +75,9 @@ class DistributedOrchestrator:
             "outcome": "quiescent" if quiescent else "watchdog_exhausted",
             "scheduled_ticks": outcome.scheduled_ticks,
             "active_node_ids": outcome.active_node_ids,
+            "terminal_node_count": sum(
+                node.state.is_terminal() for node in self._nodes.values()
+            ),
             "iterations": outcome.scheduled_ticks,
             "final_weight": final_weight,
             "message_count": self._transport.stats()["messages_sent"],
