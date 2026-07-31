@@ -1,4 +1,4 @@
-"""Centralized orchestrator for running algorithms with centralized state.
+"""Offline-only centralized reference orchestrator.
 
 Phase 1 algorithms (Greedy, Itai, Luby) require global state visibility to work correctly.
 This orchestrator provides that via a centralized StateStore.
@@ -20,10 +20,10 @@ from src.config import ExperimentConfig
 
 
 class CentralizedOrchestrator:
-    """Runs Phase 1 algorithms on centralized state.
+    """Run Phase 1 algorithms on centralized state for offline comparison.
 
-    This is used by fitness evaluator to run algorithms during GA optimization.
-    Uses traditional centralized approach (StateStore + manual loop) for Phase 1 algorithms.
+    Uses the traditional StateStore and manual-round approach. It is never a
+    distributed runtime dependency.
     """
 
     def __init__(self):

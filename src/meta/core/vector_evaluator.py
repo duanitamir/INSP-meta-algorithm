@@ -22,7 +22,11 @@ class EvaluationResult:
 
 
 class VectorEvaluator(Protocol):
-    """Scores a vector without exposing evaluator internals to the GA."""
+    """Scores a vector without exposing evaluator internals to the GA.
+
+    The explicit centralized reference evaluator lives in ``src.offline``;
+    it is intentionally not part of the distributed runtime namespace.
+    """
 
     def evaluate(self, graph: GraphManager, vector: CanonicalVector) -> EvaluationResult:
         """Run one complete evaluation."""
