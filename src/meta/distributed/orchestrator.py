@@ -21,6 +21,7 @@ class DistributedOrchestrator:
         self.executor = ParallelNodeExecutor(max_workers=max_workers)
         self._nodes: Dict[int, DistributedNode] = {}
         self._config: DistributedAlgorithmConfig | None = None
+        self._transport: InMemoryTransport | None = None
 
     def start(
         self, graph: GraphManager, canonical_vector: CanonicalVector, pre_matched_nodes: set | None = None
@@ -41,6 +42,7 @@ class DistributedOrchestrator:
         for node_id in pre_matched_nodes:
             self._nodes[node_id].finished = True
         self._config = config
+        self._transport = transport
 
     def run(self, max_ticks: int) -> RuntimeOutcome:
         """Run only the safety-bounded scheduler; it has no convergence logic."""
@@ -64,12 +66,15 @@ class DistributedOrchestrator:
             raise RuntimeError("start() must create a runtime configuration")
         outcome = self.run(max_ticks=self._config.max_iterations * max(1, len(self._nodes)))
         matching, final_weight = self._collect_results(graph)
+        if self._transport is None:
+            raise RuntimeError("start() must create a transport")
         return matching, {
             "outcome": "watchdog_exhausted" if outcome.watchdog_exhausted else "nodes_stopped",
             "scheduled_ticks": outcome.scheduled_ticks,
             "active_node_ids": outcome.active_node_ids,
             "iterations": outcome.scheduled_ticks,
             "final_weight": final_weight,
+            "message_count": self._transport.stats()["messages_sent"],
             "config_fingerprint": self._config.vector_fingerprint,
             "max_iterations": self._config.max_iterations,
             "algorithm_names": list(self._config.available_algorithms),
