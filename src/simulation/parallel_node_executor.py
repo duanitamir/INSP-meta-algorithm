@@ -40,6 +40,18 @@ class ParallelNodeExecutor:
         in_flight: Dict[Future, int] = {}
         ready = deque(node_id for node_id, node in nodes.items() if node.is_active())
 
+        if self.max_workers == 1:
+            while ready and scheduled_ticks < max_ticks:
+                node_id = ready.popleft()
+                if not nodes[node_id].is_active():
+                    continue
+                operation = (lambda: tick(nodes[node_id])) if tick else nodes[node_id].tick
+                operation()
+                scheduled_ticks += 1
+                if nodes[node_id].is_active():
+                    ready.append(node_id)
+            return self._record_outcome(nodes, scheduled_ticks, max_ticks)
+
         def submit(pool: ThreadPoolExecutor, node_id: int) -> bool:
             nonlocal scheduled_ticks
             if scheduled_ticks >= max_ticks or not nodes[node_id].is_active():
@@ -64,6 +76,15 @@ class ParallelNodeExecutor:
                 while ready and len(in_flight) < self.max_workers and scheduled_ticks < max_ticks:
                     submit(pool, ready.popleft())
 
+        return self._record_outcome(nodes, scheduled_ticks, max_ticks)
+
+    def _record_outcome(
+        self,
+        nodes: Dict[int, object],
+        scheduled_ticks: int,
+        max_ticks: int,
+    ) -> RuntimeOutcome:
+        """Create and retain the scheduler-only outcome."""
         active_node_ids = {node_id for node_id, node in nodes.items() if node.is_active()}
         outcome = RuntimeOutcome(
             scheduled_ticks=scheduled_ticks,

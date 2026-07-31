@@ -25,12 +25,13 @@ class RegisteredProposalPolicy:
     algorithm: Any
 
     def propose(self, context: LocalNodeContext) -> Mapping[int, float]:
+        neighbors = context.graph.neighbors()
         proposals = self.algorithm.propose_to_neighbors(
             context.node_id,
-            context.graph.neighbors(),
+            neighbors,
             context,
         )
-        non_neighbors = set(proposals).difference(context.graph.neighbors())
+        non_neighbors = set(proposals).difference(neighbors)
         if non_neighbors:
             raise ValueError(f"{self.name} proposed non-neighbors: {sorted(non_neighbors)}")
         return proposals

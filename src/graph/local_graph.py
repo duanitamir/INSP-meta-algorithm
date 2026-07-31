@@ -45,8 +45,13 @@ class LocalGraph:
             full_graph: The underlying GraphManager (read-only)
             node_id: The ID of the node this wrapper belongs to
         """
-        self._graph = full_graph
         self._node_id = node_id
+        self._neighbors = tuple(full_graph.neighbors(node_id))
+        self._neighbor_ids = frozenset(self._neighbors)
+        self._incident_weights = {
+            neighbor_id: full_graph.get_edge_weight(node_id, neighbor_id)
+            for neighbor_id in self._neighbors
+        }
 
     def neighbors(self) -> List[int]:
         """
@@ -56,7 +61,7 @@ class LocalGraph:
         Returns:
             List of node IDs that are neighbors
         """
-        return list(self._graph.neighbors(self._node_id))
+        return list(self._neighbors)
 
     def get_edge_weight(self, u: int, v: int) -> float:
         """
@@ -73,12 +78,12 @@ class LocalGraph:
             raise DistributionViolation("Node may read only an incident edge.")
 
         other = v if u == self._node_id else u
-        if other not in self._graph.neighbors(self._node_id):
+        if other not in self._neighbor_ids:
             raise DistributionViolation(
                 "Node may read only an existing incident edge."
             )
 
-        return self._graph.get_edge_weight(u, v)
+        return self._incident_weights[other]
 
     def degree(self) -> int:
         """
