@@ -74,6 +74,11 @@ class ReproducibleBenchmarkSuite:
             result = evaluator.evaluate(graph, vector)
             elapsed_seconds = perf_counter() - started_at
             report = result.report
+            outcome = str(report["outcome"])
+            if outcome != "quiescent":
+                raise RuntimeError(
+                    f"Benchmark scenario {scenario.family!r} ended with {outcome}"
+                )
             measurements.append(
                 BenchmarkMeasurement(
                     family=scenario.family,
@@ -83,7 +88,7 @@ class ReproducibleBenchmarkSuite:
                     matching_cardinality=_matching_cardinality(result.matching),
                     message_count=int(report["message_count"]),
                     scheduled_ticks=int(report["scheduled_ticks"]),
-                    outcome=str(report["outcome"]),
+                    outcome=outcome,
                     elapsed_seconds=elapsed_seconds,
                     mode=result.mode,
                 )

@@ -58,9 +58,7 @@ class GraphManager:
         """Get all vertices as frozenset."""
         return frozenset(self._graph.nodes())
 
-    def neighbors(
-        self, vertex_id: int, state_store=None, filter_active: bool = False
-    ) -> FrozenSet[int]:
+    def neighbors(self, vertex_id: int) -> FrozenSet[int]:
         """Get neighbors of a vertex.
 
         Args:
@@ -77,17 +75,7 @@ class GraphManager:
 
         all_neighbors = frozenset(self._graph.neighbors(vertex_id))
 
-        # If no filtering requested, return all neighbors
-        if state_store is None or not filter_active:
-            return all_neighbors
-
-        # Filter to only unmatched (active) neighbors
-        active_neighbors = frozenset(
-            neighbor
-            for neighbor in all_neighbors
-            if not state_store.get_node_state(neighbor).is_matched()
-        )
-        return active_neighbors
+        return all_neighbors
 
     def degree(self, vertex_id: int) -> int:
         """Get degree of a vertex."""

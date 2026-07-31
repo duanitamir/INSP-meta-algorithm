@@ -69,8 +69,8 @@ jupyter lab
 
 ```python
 from src.graph import GraphManager
-from src.simulation import Scheduler, SimulationConfig
-from src.algorithms.implementations import GreedyMatching
+from src.meta.core.canonical_vector import CanonicalVector
+from src.meta.distributed.orchestrator import DistributedOrchestrator
 
 # Create graph
 graph = GraphManager.create_empty_graph()
@@ -80,15 +80,9 @@ graph.add_edge(1, 2, 10.0)
 graph.add_edge(2, 3, 8.0)
 graph.add_edge(3, 4, 9.0)
 
-# Run algorithm
-algo = GreedyMatching(seed=42)
-config = SimulationConfig(max_rounds=100)
-scheduler = Scheduler(graph, algo, config)
-rounds = scheduler.run_until_termination()
-
-# Get results
-matching = algo.extract_matching(scheduler.state_store, graph)
-print(f"Converged in {rounds} rounds: {matching}")
+# Run autonomous local nodes using an offline-selected vector.
+matching, report = DistributedOrchestrator(max_workers=1).execute(graph, CanonicalVector())
+print(f"{report['outcome']}: {matching}")
 ```
 
 ## Features
@@ -122,11 +116,10 @@ Automatically tunes algorithm parameters across all 3 algorithms:
 
 ### Distributed Simulation Environment
 
-- **Message-Passing Communication**: Async message delivery with per-node queues
-- **Synchronous Rounds**: Lock-step execution with barrier synchronization
-- **State Externalization**: Centralized StateStore for snapshot/replay debugging
-- **Protocol Verification**: Deadlock-free message delivery guarantee
-- **Cascade Support**: Run multiple algorithm passes with state preservation
+- **Message-Passing Communication**: Addressed per-node transport mailboxes
+- **Autonomous Local Decisions**: Nodes only inspect local topology, local state, and received messages
+- **Quiescent Completion**: Runs finish when every node is matched or terminal-unmatched
+- **Protocol Verification**: Deterministic safety and liveness coverage
 
 ### Comprehensive Analytics & Visualization
 
@@ -143,9 +136,6 @@ Comprehensive documentation is available in the `docs/` directory:
 
 ### Core Modules
 - [**Graph Management**](docs/GRAPH.md) - GraphManager API reference
-- [**State Management**](docs/STATE.md) - StateStore for externalized node state
-- [**Communication**](docs/COMMUNICATION.md) - Message-passing protocol
-- [**Scheduler**](docs/SCHEDULER.md) - Round-based execution orchestration
 - [**Metrics**](docs/METRICS.md) - Performance tracking and collection
 - [**Visualization**](docs/VISUALIZATION.md) - ASCII rendering and debugging tools
 
@@ -159,18 +149,11 @@ Comprehensive documentation is available in the `docs/` directory:
 
 ## Key Concepts
 
-### Externalized State
-Node state lives in `StateStore`, not in algorithm objects:
-- Enables snapshots for debugging
-- Allows state sharing across algorithms
-- Makes serialization transparent
-- Supports deterministic replay
-
 ### Message-Passing Communication
 Nodes communicate exclusively through messages:
 - No shared memory
-- Synchronous round-based delivery
-- Protocol-verified for deadlock freedom
+- Each endpoint reads only its own mailbox
+- Matching decisions remain local
 
 ### Synchronous Rounds
 All nodes execute in lockstep:
@@ -258,10 +241,10 @@ distributed_node_matching/
 │   ├── algorithms/          # Algorithm implementations
 │   │   └── implementations/ # Greedy, Itai-Israeli, Luby
 │   ├── graph/              # Graph management (GraphManager)
-│   ├── state/              # State management (StateStore, NodeState)
-│   ├── communication/       # Message passing (semantic messages, queues)
-│   ├── simulation/         # Scheduler & orchestration
-│   ├── meta/               # Meta-algorithm (GA, fitness evaluator, parameterizers)
+│   ├── state/              # Local node state
+│   ├── communication/       # Addressed in-memory transport
+│   ├── simulation/         # Endpoint protocol and scheduler
+│   ├── meta/               # Offline GA and distributed evaluation
 │   ├── metrics/            # Performance tracking
 │   └── utils/              # Types & utilities
 ├── tests/
@@ -273,9 +256,6 @@ distributed_node_matching/
 │   └── serve_dashboard.py  # Optional Flask server
 ├── notebooks/
 │   ├── test_meta_algorithm.ipynb     # GA optimization & analysis (main entry point)
-│   ├── 01_itai_israeli.ipynb         # Algorithm exploration
-│   ├── 02_greedy_matching.ipynb      # Algorithm exploration
-│   ├── 03_luby_randomized.ipynb      # Algorithm exploration
 │   └── helpers/                      # Reusable utilities for notebooks
 ├── CLAUDE.md               # Complete project guide & development rules
 └── README.md               # This file
@@ -284,9 +264,6 @@ distributed_node_matching/
 
 ## Known Limitations
 
-- **Luby Algorithm**: 3-message protocol can produce asymmetry on complex graphs (simple/path graphs work perfectly)
-- **Itai-Israeli**: Asymmetry edge case on complex graphs
-- **Single Machine**: Simulation only (distributed execution is Phase 2 goal)
-- **Static Graphs**: No dynamic edge addition/removal
+- **Static Graphs**: No dynamic edge addition/removal during one run
 
 All limitations are documented with root-cause analysis in the docs.
