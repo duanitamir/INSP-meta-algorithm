@@ -76,7 +76,7 @@ class DistributedAlgorithmConfig:
         from src.meta.core.algorithm_registry import AlgorithmRegistry
 
         registry = AlgorithmRegistry.instance()
-        available_algorithms = tuple(registry.all_algorithm_names())
+        available_algorithms = tuple(vector.algorithm_names)
         algorithm_parameters: dict[str, dict[str, Any]] = {}
 
         for algorithm in available_algorithms:

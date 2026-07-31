@@ -16,6 +16,7 @@ from .support.fitness_utils import (
     get_individual_algorithm_weights,
 )
 from .support.execution_utils import run_ga_evaluation
+from .support.experiment_utils import selected_experiment_metadata
 from .analysis.metrics import compute_metrics
 from .visualization.plots import (
     plot_fitness_progression,
@@ -36,6 +37,7 @@ __all__ = [
     "get_individual_algorithm_weights",
     # Execution utilities
     "run_ga_evaluation",
+    "selected_experiment_metadata",
     # Metrics
     "compute_metrics",
     # Visualizations

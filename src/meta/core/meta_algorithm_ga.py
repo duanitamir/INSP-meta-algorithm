@@ -76,6 +76,11 @@ class MetaAlgorithmGA:
             algorithms = config.algorithms
 
         self.algorithms = algorithms
+        self.algorithm_names = (
+            tuple(getattr(algorithm, "value", algorithm) for algorithm in algorithms)
+            if algorithms is not None
+            else None
+        )
         self.evaluation_suite = evaluation_suite
 
         if fitness_evaluator is None:
@@ -110,10 +115,13 @@ class MetaAlgorithmGA:
         """
         # Initialize population with baseline vector + random vectors
         # Baseline is the default CanonicalVector (which represents optimal defaults)
-        baseline_vector = CanonicalVector()
+        baseline_vector = CanonicalVector(algorithms=self.algorithm_names)
 
         # Create initial population: baseline + diverse random vectors
-        population = [baseline_vector] + [CanonicalVector() for _ in range(self.population_size - 1)]
+        population = [baseline_vector] + [
+            CanonicalVector(algorithms=self.algorithm_names)
+            for _ in range(self.population_size - 1)
+        ]
 
         best_vector = population[0]
         best_fitness = 0.0

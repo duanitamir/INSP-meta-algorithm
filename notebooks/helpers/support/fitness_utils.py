@@ -42,7 +42,7 @@ def get_baseline_fitness(graph: GraphManager, config) -> float:
     """
     try:
         evaluator = FitnessEvaluator()
-        vector = CanonicalVector()
+        vector = CanonicalVector(algorithms=getattr(config, "algorithms", None))
         return evaluator.evaluate(graph, vector).score
     except Exception:
         return 0.0
@@ -59,7 +59,7 @@ def get_cascading_baseline(graph: GraphManager, config) -> float:
         Cascading baseline fitness score
     """
     try:
-        vector = CanonicalVector()
+        vector = CanonicalVector(algorithms=getattr(config, "algorithms", None))
         cascading = DistributedCascadingEvaluator()
         return cascading.evaluate(graph, vector).score
     except Exception:
@@ -76,7 +76,7 @@ def get_individual_algorithm_weights(graph: GraphManager, selected_algorithms) -
     Returns:
         Dictionary mapping algorithm name to weight
     """
-    vector = CanonicalVector()
+    vector = CanonicalVector(algorithms=selected_algorithms)
     results = {}
 
     # Only compute for selected algorithms

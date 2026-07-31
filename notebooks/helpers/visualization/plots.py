@@ -63,9 +63,9 @@ def plot_fitness_progression(all_results, seeds, algo_names_str):
         )
 
         # Plot individual algorithm baselines
-        colors_algo = {'greedy': '#d62728', 'itai': '#ff7f0e', 'luby': '#2ca02c'}
-        for algo_name, weight in algo_weights.items():
-            color = colors_algo.get(algo_name, '#1f77b4')
+        colors_algo = plt.rcParams['axes.prop_cycle'].by_key()['color']
+        for index, (algo_name, weight) in enumerate(algo_weights.items()):
+            color = colors_algo[index % len(colors_algo)]
             ax.axhline(
                 weight,
                 linestyle=':',
@@ -206,7 +206,7 @@ def plot_performance_metrics(all_results, seeds):
         alpha=0.7,
         edgecolor='black',
     )
-    bars3 = ax.bar(
+    ax.bar(
         x_pos + width,
         [1.0] * len(seeds),
         width,
@@ -302,21 +302,12 @@ def plot_parameter_space(all_results, seeds):
         all_results: Dictionary of results keyed by seed
         seeds: List of seed values
     """
-    param_bounds = {
-        'luby_base_probability': (0.0, 1.0),
-        'luby_coeff_degree': (-1.0, 1.0),
-        'luby_coeff_neighbors_unmatched': (-1.0, 1.0),
-        'luby_coeff_clustering': (-1.0, 1.0),
-        'luby_coeff_matched': (-1.0, 1.0),
-        'luby_coeff_round': (-1.0, 1.0),
-        'luby_coeff_weight': (-1.0, 1.0),
-        'itai_timeout_rounds': (1, 20),
-        'max_iterations': (5, 100),
-        'convergence_threshold': (0.0, 0.1),
-    }
-
     best_vector = all_results[seeds[0]]['best_vector_standard']
-    param_names = [p for p in param_bounds.keys() if hasattr(best_vector, p)]
+    param_bounds = {
+        name: (minimum, maximum)
+        for name, (minimum, maximum, _) in best_vector.parameter_definitions.items()
+    }
+    param_names = list(param_bounds)
 
     float_params = []
     int_params = []

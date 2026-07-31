@@ -11,6 +11,7 @@ evolves whatever parameters are available in the AlgorithmRegistry.
 import hashlib
 import json
 import random
+from collections.abc import Iterable
 from typing import Tuple, List, Dict, Any
 
 
@@ -26,7 +27,7 @@ class CanonicalVector:
     Supports serialization to/from dicts for GA operations.
     """
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, algorithms: Iterable[object] | None = None, **kwargs) -> None:
         """Initialize canonical parameter vector.
 
         Parameters are discovered from AlgorithmRegistry plus base parameters.
@@ -44,8 +45,11 @@ class CanonicalVector:
             "convergence_threshold": (0.0, 0.1, lambda: __import__("random").uniform(0.0, 0.1)),
         }
 
-        # Discover all available parameters from algorithm registry
-        algo_params = AlgorithmRegistry.instance().all_parameter_definitions()
+        registry = AlgorithmRegistry.instance()
+        self._algorithm_names = self._normalize_algorithm_names(algorithms, registry)
+        algo_params = {}
+        for algorithm_name in self._algorithm_names:
+            algo_params.update(registry.get_algorithm_parameters(algorithm_name))
 
         # Merge base and algorithm-specific parameters
         self._parameter_definitions = {**base_params, **algo_params}
@@ -61,6 +65,26 @@ class CanonicalVector:
             else:
                 # Generate random value within bounds
                 self._parameters[param_name] = self._random_value_for(param_def)
+
+    @staticmethod
+    def _normalize_algorithm_names(algorithms, registry) -> tuple[str, ...]:
+        if algorithms is None:
+            return tuple(registry.all_algorithm_names())
+        names = tuple(getattr(algorithm, "value", algorithm) for algorithm in algorithms)
+        unknown = set(names).difference(registry.all_algorithm_names())
+        if unknown:
+            raise ValueError(f"Unknown algorithms: {sorted(unknown)}")
+        return names
+
+    @property
+    def algorithm_names(self) -> tuple[str, ...]:
+        """Algorithms whose parameters and runtime configuration this vector owns."""
+        return self._algorithm_names
+
+    @property
+    def parameter_definitions(self) -> Dict[str, Tuple[Any, Any, Any]]:
+        """Return the selected vector's immutable-by-convention parameter schema."""
+        return self._parameter_definitions.copy()
 
     def _random_value_for(self, param_def: Tuple[Any, Any, Any]) -> Any:
         """Generate random value for a parameter within its bounds.
@@ -148,7 +172,11 @@ class CanonicalVector:
 
     def fingerprint(self) -> str:
         """Return a stable identity for this vector's serialized parameters."""
-        payload = json.dumps(self.to_dict(), sort_keys=True, separators=(",", ":"))
+        payload = json.dumps(
+            {"algorithms": self.algorithm_names, "parameters": self.to_dict()},
+            sort_keys=True,
+            separators=(",", ":"),
+        )
         return hashlib.sha256(payload.encode()).hexdigest()
 
     def to_list(self) -> List[float | int]:
@@ -165,7 +193,9 @@ class CanonicalVector:
         return [value for _, value in sorted_params]
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "CanonicalVector":
+    def from_dict(
+        cls, data: Dict[str, Any], algorithms: Iterable[object] | None = None
+    ) -> "CanonicalVector":
         """Create vector from dictionary.
 
         Args:
@@ -174,13 +204,15 @@ class CanonicalVector:
         Returns:
             New CanonicalVector with specified parameters
         """
-        vector = cls()
+        vector = cls(algorithms=algorithms)
         for param_name, value in data.items():
             vector.set(param_name, value)
         return vector
 
     @classmethod
-    def from_list(cls, values: List[float | int]) -> "CanonicalVector":
+    def from_list(
+        cls, values: List[float | int], algorithms: Iterable[object] | None = None
+    ) -> "CanonicalVector":
         """Create vector from list.
 
         Parameters are matched to sorted parameter names for determinism.
@@ -191,7 +223,7 @@ class CanonicalVector:
         Returns:
             New CanonicalVector with specified parameters
         """
-        vector = cls()
+        vector = cls(algorithms=algorithms)
         sorted_params = sorted(vector._parameter_definitions.keys())
 
         if len(values) != len(sorted_params):
@@ -205,13 +237,13 @@ class CanonicalVector:
         return vector
 
     @classmethod
-    def random(cls) -> "CanonicalVector":
+    def random(cls, algorithms: Iterable[object] | None = None) -> "CanonicalVector":
         """Generate a random canonical vector.
 
         Returns:
             New CanonicalVector with all parameters randomly initialized
         """
-        return cls()
+        return cls(algorithms=algorithms)
 
     def crossover(self, other: "CanonicalVector") -> "CanonicalVector":
         """Perform crossover with another vector.
@@ -235,7 +267,7 @@ class CanonicalVector:
                     param_name, self._parameters[param_name]
                 )
 
-        return CanonicalVector.from_dict(child_dict)
+        return CanonicalVector.from_dict(child_dict, algorithms=self.algorithm_names)
 
     def mutate(self, mutation_rate: float = 0.1) -> "CanonicalVector":
         """Perform mutation on parameters.
@@ -256,7 +288,7 @@ class CanonicalVector:
                 # Replace with random value
                 mutated_dict[param_name] = self._random_value_for(param_def)
 
-        return CanonicalVector.from_dict(mutated_dict)
+        return CanonicalVector.from_dict(mutated_dict, algorithms=self.algorithm_names)
 
 
     def __repr__(self) -> str:

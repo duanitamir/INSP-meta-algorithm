@@ -1,7 +1,5 @@
 """Edge inspection and matching analysis utilities."""
 
-from src.graph.graph_manager import GraphManager
-from src.meta.core.canonical_vector import CanonicalVector
 from src.meta.parameterizers.algorithm_parameterizer import UnifiedAlgorithmParameterizer
 from src.meta.core.matching_merger import merge_matchings
 
@@ -30,19 +28,8 @@ def inspect_matched_edges(
     print('='*100 + '\n')
 
     # Display best vector parameters
-    print(f'Best GA Vector Parameters:')
-    param_names = [
-        'luby_base_probability',
-        'luby_coeff_degree',
-        'luby_coeff_neighbors_unmatched',
-        'luby_coeff_clustering',
-        'luby_coeff_matched',
-        'luby_coeff_round',
-        'luby_coeff_weight',
-        'itai_timeout_rounds',
-        'max_iterations',
-        'convergence_threshold',
-    ]
+    print('Best GA Vector Parameters:')
+    param_names = sorted(best_vector.to_dict())
     for param_name in param_names:
         if hasattr(best_vector, param_name):
             value = getattr(best_vector, param_name)
@@ -70,7 +57,7 @@ def inspect_matched_edges(
 
         print(f'  Total edges matched: {len(matching) // 2}  (dict size: {len(matching)})')
         print(f'  Total weight: {total_weight:.0f}')
-        print(f'\n  Edge list (first 10):')
+        print('\n  Edge list (first 10):')
 
         edges = [
             (u, v, graph.get_edge_weight(u, v))
@@ -94,7 +81,7 @@ def inspect_matched_edges(
         print()
 
     print('-'*100)
-    print(f'MERGED RESULT - SELECTED Algorithms Combined (with conflict resolution)')
+    print('MERGED RESULT - SELECTED Algorithms Combined (with conflict resolution)')
     print(f'Selected: {", ".join(algo_names_list)}')
     print('-'*100 + '\n')
 
@@ -110,7 +97,7 @@ def inspect_matched_edges(
 
     print(f'Total edges in merged result: {len(merged) // 2}')
     print(f'Total weight: {total_weight:.0f}')
-    print(f'\nEdges (sorted by weight, descending):')
+    print('\nEdges (sorted by weight, descending):')
 
     edges = [(u, v, graph.get_edge_weight(u, v)) for u, v in merged.items() if u < v]
     edges.sort(key=lambda x: -x[2])
