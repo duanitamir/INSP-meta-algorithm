@@ -1,10 +1,7 @@
-"""Algorithm configuration that nodes carry and gossip to neighbors.
+"""Immutable-at-startup algorithm configuration for distributed nodes.
 
-These parameters define how algorithms behave and are spread via gossip protocol.
-Each node carries a local copy and learns updated configs from neighbors.
-
-Parameters come from CanonicalVector during GA optimization.
-100% agnostic - stores algorithm parameters dynamically without hardcoding.
+Parameters come from CanonicalVector during GA optimization and are held by
+each node for the duration of one runtime execution.
 """
 
 from dataclasses import dataclass, asdict, field
@@ -13,7 +10,7 @@ from typing import Dict, Any, List
 
 @dataclass
 class DistributedAlgorithmConfig:
-    """Algorithm parameters distributed across nodes via gossip.
+    """Algorithm parameters carried by each node for one runtime execution.
 
     Stores all algorithm parameters dynamically in algorithm_parameters dict.
     No hardcoded fields - supports any algorithm combination.
@@ -23,7 +20,7 @@ class DistributedAlgorithmConfig:
       Example: {"greedy": {"max_rounds": 100}, "itai": {"timeout_rounds": 5, ...}, ...}
     - Convergence detection thresholds (when to stop)
     - Algorithm list for dynamic discovery
-    - Version for ordering gossip updates
+    - Schema metadata for serialized startup snapshots
     """
 
     # Convergence detection (shared, not algorithm-specific)
@@ -39,7 +36,7 @@ class DistributedAlgorithmConfig:
     algorithm_parameters: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     # Example: {"greedy": {"max_rounds": 100}, "itai": {...}, "luby": {...}}
 
-    # Versioning for gossip protocol
+    # Legacy serialization fields retained for backwards-compatible payloads.
     version: int = 1
 
     # Algorithm list version for gossip protocol (algorithms discovered from registry)

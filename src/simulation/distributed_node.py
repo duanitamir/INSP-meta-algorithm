@@ -9,7 +9,6 @@ from src.graph.graph_manager import GraphManager
 from src.graph.local_graph import LocalGraph
 from src.metrics.metrics_collector import MetricsCollector
 from src.config import DistributedAlgorithmConfig
-from src.meta.messages.gossip_message import GossipMessage
 from src.simulation.local_node_context import LocalNodeContext
 
 
@@ -48,7 +47,7 @@ class DistributedNode:
         self.id = node_id
         self.graph = LocalGraph(shared_graph, node_id)
 
-        # Algorithm configuration (spreads via gossip protocol)
+        # Algorithm configuration is an immutable-at-startup snapshot.
         self.algorithm_config = algorithm_config or DistributedAlgorithmConfig()
 
         # State (this node's algorithm state)
@@ -70,8 +69,8 @@ class DistributedNode:
         # Coordination state (convergence detection)
         self.convergence_vote = None
         self.known_convergence_votes: Dict[int, bool] = {}
-        self.convergence_threshold = 0.05
-        self.quorum_threshold = 0.5
+        self.convergence_threshold = self.algorithm_config.convergence_threshold
+        self.quorum_threshold = self.algorithm_config.quorum_threshold
         self.last_matching_weight = 0.0
 
         # Conflict resolution state (pending proposals from neighbors)
@@ -283,26 +282,13 @@ class DistributedNode:
         )
 
     def _process_coordination_messages(self, messages: List[Message]) -> None:
-        """Learn about other nodes' convergence decisions and configs from messages.
-
-        Processes:
-        - GossipMessage with subtype="config": Algorithm configuration from neighbors
-        - Generic messages with type="CONVERGENCE_VOTE": Other nodes' convergence decisions
+        """Learn about other nodes' convergence decisions from addressed messages.
 
         Args:
             messages: All messages received this round
         """
         for msg in messages:
-            # Handle generic gossip messages by subtype
-            if isinstance(msg, GossipMessage):
-                # Route by message subtype
-                if msg.message_subtype == "config":
-                    self.receive_config_gossip(msg)
-                    continue
-                elif msg.message_subtype == "convergence":
-                    continue
-
-            # Handle legacy generic messages with type payload
+            # Convergence votes are the only coordination messages.
             if msg.payload.get("type") == "CONVERGENCE_VOTE":
                 sender_id = msg.sender
                 vote = msg.payload.get("vote", False)
@@ -550,68 +536,3 @@ class DistributedNode:
         self.last_matching_weight = 0.0
         self.pending_proposals.clear()
         self.local_time = 0
-
-    # ============================================================================
-    # CONFIG GOSSIP PROTOCOL (Distributed Configuration Spreading)
-    # ============================================================================
-
-    def gossip_config(self) -> None:
-        """Send current algorithm configuration to random neighbors.
-
-        Nodes spread their algorithm configuration via gossip protocol,
-        including available algorithms list (Phase 8 - NEW).
-        Neighbors will accept if version is higher than their current.
-        """
-        neighbors = self.graph.neighbors()
-        if not neighbors:
-            return
-
-        # Create config message payload with algorithm list metadata
-        payload = self.algorithm_config.to_dict()
-        payload["available_algorithms"] = self.algorithm_config.available_algorithms
-        payload["algorithm_list_version"] = self.algorithm_config.algorithm_list_version
-
-        # Create GossipMessage (for protocol abstraction)
-        generic_msg = GossipMessage.config_gossip(
-            sender_node_id=self.id,
-            payload=payload,
-            version=self.algorithm_config.version,
-            round_num=self.round_number,
-        )
-
-        # Sample up to 3 neighbors to avoid flooding
-        import random
-        sample_size = min(3, len(neighbors))
-        sampled_neighbors = random.sample(neighbors, sample_size)
-
-        # Send to sampled neighbors through recipient-scoped transport.
-        for neighbor in sampled_neighbors:
-            msg = Message(
-                sender=self.id,
-                recipient=neighbor,
-                payload=generic_msg.payload,  # Use GossipMessage payload
-                round_num=self.round_number,
-            )
-            self.communicator.send_message(msg)
-
-    def receive_config_gossip(self, msg: GossipMessage) -> None:
-        """Receive and potentially adopt algorithm configuration from neighbor.
-
-        Only accepts configuration if version > current version (version-based ordering).
-
-        Args:
-            msg: GossipMessage with subtype="config" and algorithm configuration
-        """
-        if msg.message_version > self.algorithm_config.version:
-            # Adopt this configuration
-            self.algorithm_config = DistributedAlgorithmConfig.from_dict(msg.payload)
-            self.algorithm_config.version = msg.message_version
-
-            # Update algorithm list if neighbor has newer list version (in payload)
-            # Note: GossipMessage stores algorithm list version in payload if available
-            new_list_version = msg.payload.get("algorithm_list_version", self.algorithm_config.algorithm_list_version)
-            if new_list_version > self.algorithm_config.algorithm_list_version:
-                new_algos = msg.payload.get("available_algorithms", [])
-                if new_algos and new_algos != self.algorithm_config.available_algorithms:
-                    self.algorithm_config.available_algorithms = new_algos.copy()
-                    self.algorithm_config.algorithm_list_version = new_list_version
