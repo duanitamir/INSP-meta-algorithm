@@ -43,7 +43,7 @@ def get_baseline_fitness(graph: GraphManager, config) -> float:
     try:
         evaluator = FitnessEvaluator()
         vector = CanonicalVector()
-        return evaluator.evaluate(graph, vector)
+        return evaluator.evaluate(graph, vector).score
     except Exception:
         return 0.0
 
@@ -61,7 +61,7 @@ def get_cascading_baseline(graph: GraphManager, config) -> float:
     try:
         vector = CanonicalVector()
         cascading = DistributedCascadingEvaluator()
-        return cascading.evaluate(graph, vector)
+        return cascading.evaluate(graph, vector).score
     except Exception:
         return 0.0
 
