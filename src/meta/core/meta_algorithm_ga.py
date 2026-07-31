@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, List, NamedTuple, Tuple, Optional
 from src.graph.graph_manager import GraphManager
 from src.meta.core.canonical_vector import CanonicalVector
 from src.meta.core.evaluation_suite import EvaluationSuite
-from src.meta.core.fitness_evaluator import FitnessEvaluator
+from src.meta.core.vector_evaluator import DistributedRuntimeEvaluator, VectorEvaluator
 
 if TYPE_CHECKING:
     from src.meta.config import MetaConfig
@@ -33,7 +33,7 @@ class MetaAlgorithmGA:
 
     def __init__(
         self,
-        fitness_evaluator: FitnessEvaluator | None = None,
+        fitness_evaluator: VectorEvaluator | None = None,
         evaluation_suite: EvaluationSuite | None = None,
         config: "MetaConfig | None" = None,
         population_size: int = 20,
@@ -48,7 +48,7 @@ class MetaAlgorithmGA:
         """Initialize genetic algorithm.
 
         Args:
-            fitness_evaluator: FitnessEvaluator instance (if None, creates one based on flags)
+            fitness_evaluator: Evaluator returning one EvaluationResult shape
             evaluation_suite: Optional graph-family suite used to score every candidate
             config: Optional MetaConfig for named GA configuration
             population_size: Number of vectors in population
@@ -87,7 +87,7 @@ class MetaAlgorithmGA:
                 self.fitness_evaluator = DistributedCascadingEvaluator(max_workers=num_workers)
             else:
                 # Standard distributed mode: run autonomous nodes once on full graph
-                self.fitness_evaluator = FitnessEvaluator(max_workers=num_workers)
+                self.fitness_evaluator = DistributedRuntimeEvaluator(max_workers=num_workers)
         else:
             self.fitness_evaluator = fitness_evaluator
         self.population_size = population_size
@@ -164,8 +164,7 @@ class MetaAlgorithmGA:
         if self.evaluation_suite is not None:
             return self.evaluation_suite.evaluate(vector, self.fitness_evaluator).score
 
-        result = self.fitness_evaluator.evaluate(graph, vector)
-        return float(getattr(result, "score", result))
+        return self.fitness_evaluator.evaluate(graph, vector).score
 
     def _get_adaptive_mutation_rate(self, no_improve_count: int, max_no_improve: int) -> float:
         """Compute adaptive mutation rate based on convergence."""

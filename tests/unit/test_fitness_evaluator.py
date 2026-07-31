@@ -6,6 +6,7 @@ Tests now use DistributedOrchestrator instead of centralized CascadingLoop.
 import pytest
 from src.meta.core.fitness_evaluator import FitnessEvaluator
 from src.meta.core.canonical_vector import CanonicalVector
+from src.meta.core.vector_evaluator import EvaluationResult
 from src.graph.graph_manager import GraphManager
 
 
@@ -26,8 +27,8 @@ class TestFitnessEvaluatorBasics:
 class TestFitnessEvaluatorExecution:
     """Test FitnessEvaluator.evaluate() method with distributed algorithm."""
 
-    def test_evaluate_returns_float(self) -> None:
-        """evaluate() should return float fitness score."""
+    def test_evaluate_returns_observed_evaluation_result(self) -> None:
+        """evaluate() should return score and runtime observations together."""
         graph = GraphManager.create_empty_graph()
         for v in [1, 2, 3]:
             graph.add_vertex(v)
@@ -36,10 +37,11 @@ class TestFitnessEvaluatorExecution:
         evaluator = FitnessEvaluator()
         vector = CanonicalVector()
 
-        fitness = evaluator.evaluate(graph, vector)
+        result = evaluator.evaluate(graph, vector)
 
-        assert isinstance(fitness, float)
-        assert fitness >= 0.0
+        assert isinstance(result, EvaluationResult)
+        assert result.score >= 0.0
+        assert result.report["final_weight"] == result.score
 
     def test_evaluate_empty_graph(self) -> None:
         """evaluate() should handle empty graph."""
@@ -48,9 +50,9 @@ class TestFitnessEvaluatorExecution:
         evaluator = FitnessEvaluator()
         vector = CanonicalVector()
 
-        fitness = evaluator.evaluate(graph, vector)
+        result = evaluator.evaluate(graph, vector)
 
-        assert fitness == 0.0
+        assert result.score == 0.0
 
     def test_evaluate_fitness_correlation(self) -> None:
         """Higher-weight graphs should score higher fitness."""
@@ -70,10 +72,10 @@ class TestFitnessEvaluatorExecution:
         evaluator = FitnessEvaluator()
         vector = CanonicalVector()
 
-        fitness1 = evaluator.evaluate(graph1, vector)
-        fitness2 = evaluator.evaluate(graph2, vector)
+        result1 = evaluator.evaluate(graph1, vector)
+        result2 = evaluator.evaluate(graph2, vector)
 
-        assert fitness2 >= fitness1
+        assert result2.score >= result1.score
 
     def test_evaluate_invalid_vector_raises_error(self) -> None:
         """Should raise ValueError on invalid canonical vector."""
@@ -98,9 +100,9 @@ class TestFitnessEvaluatorExecution:
         evaluator = FitnessEvaluator()
         vector = CanonicalVector()
 
-        fitness = evaluator.evaluate(graph, vector)
+        result = evaluator.evaluate(graph, vector)
 
         # Should find the edge or return 0 if endpoints don't both vote for it
-        assert fitness >= 0.0
+        assert result.score >= 0.0
         # With distributed voting, single edge may or may not be included
         # depending on endpoint consensus logic

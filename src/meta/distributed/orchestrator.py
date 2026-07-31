@@ -72,6 +72,7 @@ class DistributedOrchestrator:
             "final_weight": final_weight,
             "config_fingerprint": self._config.vector_fingerprint,
             "max_iterations": self._config.max_iterations,
+            "algorithm_names": list(self._config.available_algorithms),
             "central_algorithmic_decisions": 0,
         }
 

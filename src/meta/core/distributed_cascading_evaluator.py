@@ -7,6 +7,7 @@ Matched nodes are removed between passes, accumulating matches across cascades.
 
 from src.graph.graph_manager import GraphManager
 from src.meta.core.canonical_vector import CanonicalVector
+from src.meta.core.vector_evaluator import EvaluationResult
 from src.meta.distributed.orchestrator import DistributedOrchestrator
 
 
@@ -39,21 +40,18 @@ class DistributedCascadingEvaluator:
         self.last_num_cascades = 0
         self.last_weights_per_cascade = []
 
-    def evaluate(self, graph: GraphManager, vector: CanonicalVector) -> float:
+    def evaluate(self, graph: GraphManager, vector: CanonicalVector) -> EvaluationResult:
         """Evaluate fitness using cascading rounds with standard algorithms.
 
         Uses the same algorithm execution as standard evaluator, but runs repeatedly
         on a shrinking graph where matched nodes are removed between passes.
-
-        Compatible with FitnessEvaluator interface - returns just the fitness weight.
-        Cascading details stored in self.last_num_cascades and self.last_weights_per_cascade.
 
         Args:
             graph: GraphManager instance
             vector: CanonicalVector with parameters including max_iterations and convergence_threshold
 
         Returns:
-            Final weight (fitness score). Cascade details in self.last_* attributes for analysis.
+            Observer result with accumulated matching weight and cascade metrics.
         """
         is_valid, error = vector.validate()
         if not is_valid:
@@ -66,6 +64,8 @@ class DistributedCascadingEvaluator:
         already_matched_nodes = set()
 
         weight_per_round = []
+        combined_matching = {}
+        cascade_reports = []
         cascade_round = 0
         total_weight = 0.0  # Accumulate weight across ALL cascades
 
@@ -82,7 +82,9 @@ class DistributedCascadingEvaluator:
             # Run distributed orchestrator on filtered graph
             orchestrator = DistributedOrchestrator(max_workers=self.max_workers)
 
-            matching, _ = orchestrator.execute(cascade_graph, vector)
+            matching, report = orchestrator.execute(cascade_graph, vector)
+            cascade_reports.append(report)
+            combined_matching.update(matching)
 
             # Calculate weight for THIS CASCADE (new matches found on filtered graph)
             curr_weight = 0.0
@@ -110,8 +112,20 @@ class DistributedCascadingEvaluator:
         self.last_num_cascades = cascade_round + 1
         self.last_weights_per_cascade = weight_per_round
 
-        # Return total accumulated matched weight across all cascades
-        return total_weight
+        return EvaluationResult(
+            score=total_weight,
+            matching=combined_matching,
+            report={
+                "final_weight": total_weight,
+                "cascade_count": self.last_num_cascades,
+                "cascade_weights": tuple(weight_per_round),
+                "scheduled_ticks": sum(report["scheduled_ticks"] for report in cascade_reports),
+                "algorithm_names": (
+                    cascade_reports[0].get("algorithm_names", []) if cascade_reports else []
+                ),
+            },
+            mode="distributed_cascading",
+        )
 
     def _create_filtered_graph(
         self, graph: GraphManager, already_matched_nodes: set

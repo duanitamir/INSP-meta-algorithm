@@ -187,5 +187,5 @@ class TestMetaAlgorithmGAEvolution:
 
         best_vector, history = ga.evolve(graph)
 
-        best_fitness = evaluator.evaluate(graph, best_vector)
-        assert best_fitness >= max(history) - 0.01  # Allow floating point error
+        best_result = evaluator.evaluate(graph, best_vector)
+        assert best_result.score >= max(history) - 0.01  # Allow floating point error

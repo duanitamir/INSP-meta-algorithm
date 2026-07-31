@@ -29,16 +29,12 @@ class FitnessEvaluator:
         self.max_workers = max_workers
         self.evaluator = evaluator or DistributedRuntimeEvaluator(max_workers=max_workers)
 
-    def evaluate_result(self, graph: GraphManager, vector: CanonicalVector) -> EvaluationResult:
+    def evaluate(self, graph: GraphManager, vector: CanonicalVector) -> EvaluationResult:
         """Return the complete observer-only evaluation result."""
         is_valid, error = vector.validate()
         if not is_valid:
             raise ValueError(f"Invalid vector: {error}")
         return self.evaluator.evaluate(graph, vector)
-
-    def evaluate(self, graph: GraphManager, vector: CanonicalVector) -> float:
-        """Return only the score for existing GA callers."""
-        return self.evaluate_result(graph, vector).score
 
     def name(self) -> str:
         return "FitnessEvaluator"
