@@ -38,6 +38,13 @@ class DistributedAlgorithmConfig:
         """Return one configured parameter or its explicit default."""
         return self.get_algorithm_params(algorithm).get(parameter, default)
 
+    def get_policy_weight(self, algorithm: str) -> float:
+        """Return one selected policy's non-negative local combination weight."""
+        weight = float(self.get_parameter(algorithm, "policy_weight", 1.0))
+        if weight < 0:
+            raise ValueError(f"Policy weight for {algorithm} must be non-negative")
+        return weight
+
     def has_parameters_for(self, algorithm: str) -> bool:
         """Return whether the startup snapshot contains algorithm parameters."""
         return algorithm in self.algorithm_parameters

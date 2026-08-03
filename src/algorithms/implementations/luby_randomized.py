@@ -8,6 +8,7 @@ from src.algorithms.base import AlgorithmMetadata, MatchingAlgorithm
 
 class LubyRandomizedMatching(MatchingAlgorithm):
     PARAMETERS = {
+        "policy_weight": {"min": 0.0, "max": 2.0, "default": 1.0, "type": "number", "description": "Local policy combination weight"},
         "base_probability": {"min": 0.0, "max": 1.0, "default": 0.5, "type": "number", "description": "Activation probability"},
         "coeff_degree": {"min": -1.0, "max": 1.0, "default": 0.1, "type": "number", "description": "Degree coefficient"},
         "coeff_neighbors_unmatched": {"min": -1.0, "max": 1.0, "default": 0.1, "type": "number", "description": "Neighbour coefficient"},

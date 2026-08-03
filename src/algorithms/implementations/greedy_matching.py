@@ -1,13 +1,17 @@
 """Greedy local proposal policy."""
 
+import random
 from typing import Dict, List
 
 from src.algorithms.base import AlgorithmMetadata, MatchingAlgorithm
 
 
 class GreedyMatching(MatchingAlgorithm):
-    PARAMETERS = {"max_rounds": {"min": 5, "max": 100, "default": 100, "type": "integer", "description": "Maximum execution rounds"}}
-    PARAMETER_DEFINITION = {"name": "greedy", "display_name": "Greedy Matching", "parameters": {name: (spec["min"], spec["max"], lambda spec=spec: __import__("random").randint(spec["min"], spec["max"])) for name, spec in PARAMETERS.items()}}
+    PARAMETERS = {
+        "policy_weight": {"min": 0.0, "max": 2.0, "default": 1.0, "type": "number", "description": "Local policy combination weight"},
+        "max_rounds": {"min": 5, "max": 100, "default": 100, "type": "integer", "description": "Maximum execution rounds"},
+    }
+    PARAMETER_DEFINITION = {"name": "greedy", "display_name": "Greedy Matching", "parameters": {name: (spec["min"], spec["max"], lambda spec=spec: random.uniform(spec["min"], spec["max"]) if spec["type"] == "number" else random.randint(spec["min"], spec["max"])) for name, spec in PARAMETERS.items()}}
     PARAMETER_DEFAULTS = {name: spec["default"] for name, spec in PARAMETERS.items()}
 
     def __init__(self, parameters: Dict | None = None) -> None:

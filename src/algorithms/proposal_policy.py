@@ -41,6 +41,33 @@ class RegisteredProposalPolicy:
         }
 
 
+def combine_local_policy_preferences(
+    proposals_by_policy: Mapping[str, Mapping[int, float]],
+    config: DistributedAlgorithmConfig,
+) -> int | None:
+    """Select one neighbor by combining normalized local policy preferences.
+
+    Raw proposal values remain local edge scores.  Every policy's scores are
+    normalized independently before its registry-derived combination weight is
+    applied, so one policy's numeric scale cannot overpower another's weight.
+    """
+    combined: dict[int, float] = {}
+    for policy_name in config.available_algorithms:
+        proposals = proposals_by_policy.get(policy_name, {})
+        if not proposals:
+            continue
+        scale = max(abs(score) for score in proposals.values())
+        if scale == 0:
+            continue
+        weight = config.get_policy_weight(policy_name)
+        for neighbor_id, score in proposals.items():
+            combined[neighbor_id] = combined.get(neighbor_id, 0.0) + weight * score / scale
+
+    if not combined:
+        return None
+    return max(combined, key=lambda neighbor_id: (combined[neighbor_id], -neighbor_id))
+
+
 def build_local_proposal_policies(
     config: DistributedAlgorithmConfig,
 ) -> tuple[LocalProposalPolicy, ...]:

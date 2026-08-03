@@ -8,6 +8,7 @@ from src.algorithms.base import AlgorithmMetadata, MatchingAlgorithm
 
 class WattenhoferGraphMatching(MatchingAlgorithm):
     PARAMETERS = {
+        "policy_weight": {"min": 0.0, "max": 2.0, "default": 1.0, "type": "float", "description": "Local policy combination weight"},
         "watt_phase_count": {"min": 1, "max": 20, "default": 10, "type": "integer", "description": "Filtering phases"},
         "watt_rounds_per_phase": {"min": 2, "max": 20, "default": 10, "type": "integer", "description": "Rounds per phase"},
         "watt_valid_threshold": {"min": 0.1, "max": 1.0, "default": 0.5, "type": "float", "description": "Local weight threshold"},

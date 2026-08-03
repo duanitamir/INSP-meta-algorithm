@@ -8,7 +8,10 @@ from src.communication.transport import InMemoryTransport
 from src.graph.graph_manager import GraphManager
 from src.graph.local_graph import LocalGraph
 from src.metrics.metrics_collector import MetricsCollector
-from src.algorithms.proposal_policy import build_local_proposal_policies
+from src.algorithms.proposal_policy import (
+    build_local_proposal_policies,
+    combine_local_policy_preferences,
+)
 from src.config import DistributedAlgorithmConfig
 from src.simulation.endpoint_protocol import EndpointProtocol
 from src.simulation.local_convergence import LocalConvergence
@@ -199,18 +202,17 @@ class DistributedNode:
             policy.name: policy.propose(context) for policy in self.proposal_policies
         }
 
-        # PHASE 2: Accumulate proposals from all algorithms
+        # PHASE 2: Combine normalized local policy preferences. The selected
+        # proposal carries the graph's actual edge weight into the endpoint
+        # protocol; policy preferences are never sent over the network.
         self.pending_proposals.clear()
-        for algo_name, proposals in proposals_per_algorithm.items():
-            if proposals:  # Only process non-empty proposals
-                for neighbor_id, weight in proposals.items():
-                    # Keep highest weight proposal per neighbor
-                    if neighbor_id not in self.pending_proposals:
-                        self.pending_proposals[neighbor_id] = weight
-                    else:
-                        self.pending_proposals[neighbor_id] = max(
-                            self.pending_proposals[neighbor_id], weight
-                        )
+        selected_neighbor = combine_local_policy_preferences(
+            proposals_per_algorithm, self.algorithm_config
+        )
+        if selected_neighbor is not None:
+            self.pending_proposals[selected_neighbor] = self.graph.get_edge_weight(
+                self.id, selected_neighbor
+            )
 
         # PHASE 3: ALWAYS call conflict_solution() - Protocol Consistency Guaranteed
         # Handles: 0 proposals (no-op), 1 proposal (select it), N proposals (full voting)
