@@ -37,3 +37,7 @@ class MatchingAlgorithm(ABC):
         self, node_id: int, neighbors: List[int], context: "LocalNodeContext"
     ) -> Dict[int, float]:
         """Return weighted proposals addressed only to direct neighbours."""
+
+    def create_protocol(self, **_: Any) -> Any | None:
+        """Optionally create an opaque endpoint protocol for this algorithm."""
+        return None
