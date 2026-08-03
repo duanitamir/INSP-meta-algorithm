@@ -14,9 +14,12 @@ def selected_experiment_metadata(selected_algorithms: Iterable[object]) -> dict:
     return {
         "algorithms": {
             name: {
-                "parameters": tuple(registry.get_algorithm_parameters(name)),
+                "parameters": list(registry.get_algorithm_parameters(name)),
             }
             for name in names
         },
-        "vector_parameters": vector.parameter_definitions,
+        "vector_parameters": {
+            name: {"minimum": minimum, "maximum": maximum}
+            for name, (minimum, maximum, _) in vector.parameter_definitions.items()
+        },
     }

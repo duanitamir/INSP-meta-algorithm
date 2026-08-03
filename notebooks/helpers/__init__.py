@@ -12,7 +12,6 @@ from .support.graph_utils import fixture_to_graph, format_time
 from .support.fitness_utils import (
     get_optimal_weight,
     get_baseline_fitness,
-    get_cascading_baseline,
     get_individual_algorithm_weights,
 )
 from .support.execution_utils import run_ga_evaluation
@@ -33,7 +32,6 @@ __all__ = [
     # Fitness utilities
     "get_optimal_weight",
     "get_baseline_fitness",
-    "get_cascading_baseline",
     "get_individual_algorithm_weights",
     # Execution utilities
     "run_ga_evaluation",

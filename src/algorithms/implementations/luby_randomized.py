@@ -29,7 +29,8 @@ class LubyRandomizedMatching(MatchingAlgorithm):
         return self._metadata
 
     def propose_to_neighbors(self, node_id: int, neighbors: List[int], context) -> Dict[int, float]:
-        if not neighbors or random.random() >= self.parameters["base_probability"]:
+        activation_seed = f"{context.config.vector_fingerprint}:{node_id}:{context.round_number}"
+        if not neighbors or random.Random(activation_seed).random() >= self.parameters["base_probability"]:
             return {}
         neighbor_id = max(neighbors, key=lambda neighbor: (context.graph.get_edge_weight(node_id, neighbor), -neighbor))
         return {neighbor_id: context.graph.get_edge_weight(node_id, neighbor_id)}

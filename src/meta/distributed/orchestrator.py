@@ -32,11 +32,18 @@ class DistributedOrchestrator:
             raise ValueError(f"Invalid canonical vector: {error}")
 
         node_ids = graph.vertices()
+        graph.start_run()
         transport = InMemoryTransport(node_ids)
         config = DistributedAlgorithmConfig.from_canonical_vector(canonical_vector)
         pre_matched_nodes = pre_matched_nodes or set()
         self._nodes = {
-            node_id: DistributedNode(node_id, graph, algorithm_config=config, transport=transport)
+            node_id: DistributedNode(
+                node_id,
+                graph,
+                algorithm_config=config,
+                transport=transport,
+                lifecycle_observer=graph.record_node_deactivation,
+            )
             for node_id in node_ids
         }
         for node_id in pre_matched_nodes:
@@ -78,6 +85,7 @@ class DistributedOrchestrator:
             "terminal_node_count": sum(
                 node.state.is_terminal() for node in self._nodes.values()
             ),
+            "node_activity": graph.run_activity(),
             "iterations": outcome.scheduled_ticks,
             "final_weight": final_weight,
             "message_count": self._transport.stats()["messages_sent"],

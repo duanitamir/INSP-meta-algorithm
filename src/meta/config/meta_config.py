@@ -24,7 +24,6 @@ class GAConfig:
         elite_fraction: Fraction of population to keep as elite (default: 0.5)
         early_stop_generations: Stop if no improvement for N generations (default: 10)
         num_workers: Number of parallel workers for evaluation (default: 4)
-        use_cascading: If True, use cascading evaluator; else use standard (default: True)
     """
     population_size: int = 20
     generations: int = 10
@@ -32,7 +31,6 @@ class GAConfig:
     elite_fraction: float = 0.5
     early_stop_generations: int = 10
     num_workers: int = 4
-    use_cascading: bool = True
 
     def validate(self) -> Tuple[bool, Optional[str]]:
         """Validate GA parameters are within acceptable ranges.
@@ -69,8 +67,7 @@ class GAConfig:
             f"  mutation_rate={self.mutation_rate},\n"
             f"  elite_fraction={self.elite_fraction},\n"
             f"  early_stop_generations={self.early_stop_generations},\n"
-            f"  num_workers={self.num_workers},\n"
-            f"  use_cascading={self.use_cascading}\n"
+            f"  num_workers={self.num_workers}\n"
             f")"
         )
 

@@ -73,12 +73,10 @@ class TestCanonicalVectorValidation:
         assert "max_iterations" in error
 
     def test_validation_fails_invalid_convergence_threshold(self):
-        """Invalid convergence_threshold should fail."""
         vector = CanonicalVector(convergence_threshold=0.2)
         is_valid, error = vector.validate()
         assert not is_valid
         assert "convergence_threshold" in error
-
 
 class TestCanonicalVectorSerialization:
     """Test serialization and deserialization."""

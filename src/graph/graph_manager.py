@@ -1,4 +1,5 @@
 from typing import Dict, List, FrozenSet, Any
+from threading import RLock
 import networkx as nx
 
 
@@ -7,6 +8,32 @@ class GraphManager:
 
     def __init__(self):
         self._graph: nx.Graph = nx.Graph()
+        self._activity_lock = RLock()
+        self._run_activity: Dict[int, Dict[str, Any]] = {}
+
+    def start_run(self) -> None:
+        """Clear the observer-only node activity projection for a new run."""
+        with self._activity_lock:
+            self._run_activity.clear()
+
+    def record_node_deactivation(
+        self, node_id: int, reason: str, logical_tick: int
+    ) -> None:
+        """Record a node-owned terminal event without changing topology."""
+        if node_id not in self._graph:
+            raise ValueError(f"Vertex {node_id} not in graph")
+        if reason not in {"matched", "terminal_unmatched"}:
+            raise ValueError(f"Unknown deactivation reason: {reason}")
+        with self._activity_lock:
+            self._run_activity.setdefault(
+                node_id,
+                {"reason": reason, "logical_tick": logical_tick},
+            )
+
+    def run_activity(self) -> Dict[int, Dict[str, Any]]:
+        """Return a copy of the current run's observer-only activity projection."""
+        with self._activity_lock:
+            return {node_id: activity.copy() for node_id, activity in self._run_activity.items()}
 
     @classmethod
     def create_empty_graph(cls) -> "GraphManager":

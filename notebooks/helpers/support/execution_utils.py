@@ -16,12 +16,6 @@ def run_ga_evaluation(graph: GraphManager, config) -> tuple:
     Returns:
         Tuple of (best_vector, fitness_history)
     """
-    use_cascading = (
-        config.ga_config.use_cascading
-        if hasattr(config.ga_config, 'use_cascading')
-        else False
-    )
-
     # Extract algorithms from config (if provided)
     algorithms = getattr(config, 'algorithms', None)
 
@@ -29,7 +23,6 @@ def run_ga_evaluation(graph: GraphManager, config) -> tuple:
         population_size=config.ga_config.population_size,
         generations=config.ga_config.generations,
         mutation_rate=config.ga_config.mutation_rate,
-        use_cascading=use_cascading,
         algorithms=algorithms,
     )
     return ga.evolve(graph)

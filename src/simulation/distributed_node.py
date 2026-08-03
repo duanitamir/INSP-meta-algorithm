@@ -1,6 +1,6 @@
 """Fully distributed node for autonomous algorithm execution and coordination."""
 
-from typing import Any, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Tuple
 from src.state.node import NodeState
 from src.communication.message import Message
 from src.communication.node_communicator import NodeCommunicator
@@ -38,13 +38,14 @@ class DistributedNode:
         shared_graph: GraphManager,
         algorithm_config: DistributedAlgorithmConfig | None = None,
         transport: InMemoryTransport | None = None,
+        lifecycle_observer: Callable[[int, str, int], None] | None = None,
     ):
         """Initialize a distributed node.
 
         Args:
             node_id: Unique node identifier
             shared_graph: Read-only reference to network topology
-            algorithm_config: Algorithm configuration with convergence and algorithm parameters.
+            algorithm_config: Immutable startup snapshot for local policies and protocol.
                              If None, creates default configuration.
         """
         self.id = node_id
@@ -62,6 +63,7 @@ class DistributedNode:
         # a runtime supplies one shared transport to every node.
         self.transport = transport or InMemoryTransport(shared_graph.vertices())
         self.communicator = NodeCommunicator(node_id, self.transport)
+        self._lifecycle_observer = lifecycle_observer
 
         # Execution tracking
         self.round_number = 0
@@ -85,14 +87,9 @@ class DistributedNode:
             self.proposal_timeout,
         )
         self.convergence = LocalConvergence(
-            self.id,
-            self.graph,
-            self.state,
-            self.communicator.send_message,
-            self.algorithm_config.convergence_threshold,
-            self.algorithm_config.quorum_threshold,
+            self.id, self.graph, self.state, self.communicator.send_message,
+            self.algorithm_config.convergence_threshold, self.algorithm_config.quorum_threshold,
         )
-
         # Track should_stop for autonomous loop (Phase 1)
         self.should_stop = False
 
@@ -100,17 +97,9 @@ class DistributedNode:
     def convergence_vote(self) -> bool | None:
         return self.convergence.vote
 
-    @convergence_vote.setter
-    def convergence_vote(self, value: bool | None) -> None:
-        self.convergence.vote = value
-
     @property
     def known_convergence_votes(self) -> Dict[int, bool]:
         return self.convergence.known_votes
-
-    @known_convergence_votes.setter
-    def known_convergence_votes(self, value: Dict[int, bool]) -> None:
-        self.convergence.known_votes = value
 
     @property
     def convergence_threshold(self) -> float:
@@ -119,18 +108,6 @@ class DistributedNode:
     @property
     def quorum_threshold(self) -> float:
         return self.convergence.quorum_threshold
-
-    @quorum_threshold.setter
-    def quorum_threshold(self, value: float) -> None:
-        self.convergence.quorum_threshold = value
-
-    @property
-    def last_matching_weight(self) -> float:
-        return self.convergence.last_matching_weight
-
-    @last_matching_weight.setter
-    def last_matching_weight(self, value: float) -> None:
-        self.convergence.last_matching_weight = value
 
     def run_autonomous(self) -> None:
         """PHASE 1: Node's autonomous execution loop.
@@ -143,8 +120,7 @@ class DistributedNode:
         executed_iterations = 0
 
         # Run autonomous rounds until this node decides to stop or reaches its
-        # node-owned safety limit.  A node without incoming quorum messages
-        # must not spin forever.
+        # node-owned safety limit.
         while (
             not self.should_stop
             and not self.finished
@@ -204,7 +180,6 @@ class DistributedNode:
         PHASE 2: Accumulate all proposals into pending_proposals
         PHASE 3: ALWAYS call conflict_solution() (Protocol Consistency)
         PHASE 4: Send confirmation messages (Phase 2 two-phase commit)
-        PHASE 5: Check convergence
 
         Returns:
             (continue_running, status_message)
@@ -249,10 +224,7 @@ class DistributedNode:
             active_nodes=1 if self.state.is_matched() else 0,
         )
 
-        # Decide convergence vote
         self._decide_convergence()
-
-        # Share this tick's local decision only after computing it.
         self._gossip_convergence_vote()
 
         if self._finish_if_terminal():
@@ -276,28 +248,29 @@ class DistributedNode:
         )
 
     def _process_coordination_messages(self, messages: List[Message]) -> None:
-        """Delegate direct-neighbor convergence votes to the local collaborator."""
         self.convergence.process_messages(messages)
 
     def _decide_convergence(self) -> None:
-        """Delegate this node's local convergence decision."""
         self.convergence.decide(self.round_number)
 
     def _gossip_convergence_vote(self) -> None:
-        """Delegate bounded convergence-vote gossip."""
         self.convergence.gossip(self.round_number)
 
     def _should_stop_based_on_quorum(self) -> bool:
-        """Delegate the local-neighbor quorum decision."""
         return self.convergence.should_stop()
 
     def _finish_if_terminal(self) -> bool:
         """Finish only when this endpoint has no remaining matching work."""
+        reason = None
         if self.state.is_matched():
-            self.finished = True
+            reason = "matched"
         elif self.endpoint_protocol.can_quiesce():
             self.state.mark_terminal_unmatched()
+            reason = "terminal_unmatched"
+        if reason is not None and not self.finished:
             self.finished = True
+            if self._lifecycle_observer is not None:
+                self._lifecycle_observer(self.id, reason, self.local_time)
         return self.finished
 
     def get_matching(self) -> Dict[int, int]:

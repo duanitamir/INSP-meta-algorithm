@@ -3,7 +3,6 @@
 Contains:
 - CanonicalVector: 10-parameter GA chromosome
 - FitnessEvaluator: Evaluate fitness of parameter vectors
-- DistributedCascadingEvaluator: Distributed cascading fitness evaluation with autonomous nodes
 - MetaAlgorithmGA: Genetic algorithm for parameter optimization
 """
 
@@ -22,7 +21,6 @@ from .vector_evaluator import (
     EvaluationResult,
     VectorEvaluator,
 )
-from .distributed_cascading_evaluator import DistributedCascadingEvaluator
 from .meta_algorithm_ga import MetaAlgorithmGA, PopulationEvaluation
 
 __all__ = [
@@ -37,7 +35,6 @@ __all__ = [
     "DistributedRuntimeEvaluator",
     "EvaluationResult",
     "VectorEvaluator",
-    "DistributedCascadingEvaluator",
     "MetaAlgorithmGA",
     "PopulationEvaluation",
 ]

@@ -32,7 +32,6 @@ class TestMetaAlgorithmGABasics:
                 elite_fraction=0.4,
                 early_stop_generations=2,
                 num_workers=1,
-                use_cascading=False,
             )
         )
 

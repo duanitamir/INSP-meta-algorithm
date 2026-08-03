@@ -42,7 +42,6 @@ class MetaAlgorithmGA:
         elite_fraction: float = 0.5,
         early_stop_generations: int = 10,
         num_workers: int = 4,
-        use_cascading: bool = False,
         algorithms: Optional[List] = None,
     ) -> None:
         """Initialize genetic algorithm.
@@ -57,8 +56,6 @@ class MetaAlgorithmGA:
             elite_fraction: Fraction of population to keep as elite [0.1, 0.9]
             early_stop_generations: Stop if no improvement for N generations (default 10)
             num_workers: Number of parallel workers for evaluation
-            use_cascading: If True, use cascading evaluator (multi-pass on shrinking graphs)
-                          If False, use standard evaluator (single pass on full graph)
             algorithms: Optional list of Algorithms enum values to optimize for
         """
         if config is not None:
@@ -72,7 +69,6 @@ class MetaAlgorithmGA:
             elite_fraction = ga_config.elite_fraction
             early_stop_generations = ga_config.early_stop_generations
             num_workers = ga_config.num_workers
-            use_cascading = ga_config.use_cascading
             algorithms = config.algorithms
 
         self.algorithms = algorithms
@@ -83,18 +79,11 @@ class MetaAlgorithmGA:
         )
         self.evaluation_suite = evaluation_suite
 
-        if fitness_evaluator is None:
-            # Create evaluator based on cascading flag
-            # Both modes use DistributedOrchestrator (100% distributed)
-            if use_cascading:
-                # Cascading mode: run autonomous nodes repeatedly on shrinking graphs
-                from src.meta.core.distributed_cascading_evaluator import DistributedCascadingEvaluator
-                self.fitness_evaluator = DistributedCascadingEvaluator(max_workers=num_workers)
-            else:
-                # Standard distributed mode: run autonomous nodes once on full graph
-                self.fitness_evaluator = DistributedRuntimeEvaluator(max_workers=num_workers)
-        else:
-            self.fitness_evaluator = fitness_evaluator
+        self.fitness_evaluator = (
+            fitness_evaluator
+            if fitness_evaluator is not None
+            else DistributedRuntimeEvaluator(max_workers=num_workers)
+        )
         self.population_size = population_size
         self.generations = generations
         self.base_mutation_rate = mutation_rate
