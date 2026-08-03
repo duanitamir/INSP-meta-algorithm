@@ -12,25 +12,19 @@ class TestCanonicalVectorInitialization:
 
         # Verify defaults exist and are in valid ranges
         assert 0.0 <= vector.get("luby_base_probability") <= 1.0
-        assert 1 <= vector.get("itai_timeout_rounds") <= 20
+        assert 0.0 <= vector.get("itai_policy_weight") <= 2.0
         assert 5 <= vector.get("max_iterations") <= 100
 
     def test_initialization_with_custom_values(self):
         """Vector should accept custom parameter values."""
         vector = CanonicalVector(
             luby_base_probability=0.6,
-            luby_coeff_degree=0.2,
-            luby_coeff_neighbors_unmatched=-0.1,
-            luby_coeff_clustering=0.15,
-            luby_coeff_matched=0.05,
-            luby_coeff_round=-0.02,
-            luby_coeff_weight=0.3,
-            itai_timeout_rounds=7,
+            itai_policy_weight=1.5,
             max_iterations=50,
         )
 
         assert vector.get("luby_base_probability") == 0.6
-        assert vector.get("itai_timeout_rounds") == 7
+        assert vector.get("itai_policy_weight") == 1.5
         assert vector.get("max_iterations") == 50
 
 
@@ -51,19 +45,11 @@ class TestCanonicalVectorValidation:
         assert not is_valid
         assert "luby_base_probability" in error
 
-    def test_validation_fails_invalid_coefficient(self):
-        """Invalid luby coefficient should fail."""
-        vector = CanonicalVector(luby_coeff_degree=2.0)
+    def test_validation_fails_invalid_policy_weight(self):
+        vector = CanonicalVector(itai_policy_weight=3.0)
         is_valid, error = vector.validate()
         assert not is_valid
-        assert "luby_coeff_degree" in error
-
-    def test_validation_fails_invalid_timeout(self):
-        """Invalid timeout_rounds should fail."""
-        vector = CanonicalVector(itai_timeout_rounds=25)
-        is_valid, error = vector.validate()
-        assert not is_valid
-        assert "itai_timeout_rounds" in error
+        assert "itai_policy_weight" in error
 
     def test_validation_fails_invalid_max_iterations(self):
         """Invalid max_iterations should fail."""
@@ -86,9 +72,7 @@ class TestCanonicalVectorSerialization:
         vector = CanonicalVector()
         result = vector.to_list()
         assert isinstance(result, list)
-        # With algorithm-specific parameters discovered from all algorithms
-        # Expected: 2 base + 11 Luby/Greedy/Itai + 5 Wattenhofer = 18 parameters
-        assert len(result) >= 13  # At least 13 (3 base algorithms), may have more with Wattenhofer
+        assert len(result) == len(vector.parameter_definitions)
 
     def test_from_list_creates_vector_from_list(self):
         """from_list() should create vector from list."""
@@ -106,13 +90,7 @@ class TestCanonicalVectorSerialization:
         """Should roundtrip through list."""
         original = CanonicalVector(
             luby_base_probability=0.6,
-            luby_coeff_degree=0.2,
-            luby_coeff_neighbors_unmatched=-0.1,
-            luby_coeff_clustering=0.15,
-            luby_coeff_matched=0.05,
-            luby_coeff_round=-0.02,
-            luby_coeff_weight=0.3,
-            itai_timeout_rounds=7,
+            itai_policy_weight=1.5,
             max_iterations=50,
             convergence_threshold=0.05,
         )
@@ -121,7 +99,7 @@ class TestCanonicalVectorSerialization:
         reconstructed = CanonicalVector.from_list(params)
 
         assert reconstructed.get("luby_base_probability") == original.luby_base_probability
-        assert reconstructed.get("itai_timeout_rounds") == original.itai_timeout_rounds
+        assert reconstructed.get("itai_policy_weight") == original.itai_policy_weight
         assert reconstructed.max_iterations == original.max_iterations
         assert reconstructed.convergence_threshold == original.convergence_threshold
 
@@ -143,8 +121,7 @@ class TestCanonicalVectorUtilities:
         """Vector should have all parameters."""
         vector = CanonicalVector()
         assert hasattr(vector, "luby_base_probability")
-        assert hasattr(vector, "luby_coeff_degree")
-        assert hasattr(vector, "itai_timeout_rounds")
+        assert hasattr(vector, "itai_policy_weight")
         assert hasattr(vector, "max_iterations")
 
     def test_random_vector_generation(self):
