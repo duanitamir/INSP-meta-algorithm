@@ -3,10 +3,10 @@
 import random
 from typing import Dict, List
 
-from src.algorithms.base import AlgorithmMetadata, MatchingAlgorithm
+from src.algorithms.base import AlgorithmMetadata, ProposalPolicyAlgorithm
 
 
-class GreedyMatching(MatchingAlgorithm):
+class GreedyMatching(ProposalPolicyAlgorithm):
     PARAMETERS = {
         "policy_weight": {"min": 0.0, "max": 2.0, "default": 1.0, "type": "number", "description": "Local policy combination weight"},
         "max_rounds": {"min": 5, "max": 100, "default": 100, "type": "integer", "description": "Local proposal horizon"},

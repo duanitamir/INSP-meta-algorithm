@@ -11,6 +11,7 @@ from typing import List, Tuple, Optional
 
 # Import Algorithms enum from where algorithms are registered (single source of truth)
 from src.algorithms.implementations.register_all import Algorithms
+from src.meta.core.algorithm_registry import AlgorithmRegistry
 
 
 @dataclass
@@ -98,8 +99,8 @@ class MetaConfig:
     def __post_init__(self):
         """Initialize defaults if not provided."""
         if self.algorithms is None:
-            # Use all available algorithms by default
-            self.algorithms = [a for a in Algorithms]
+            default_names = set(AlgorithmRegistry.instance().default_algorithm_names())
+            self.algorithms = [algorithm for algorithm in Algorithms if algorithm.value in default_names]
 
         if self.ga_config is None:
             # Use default GA parameters

@@ -14,6 +14,11 @@ if TYPE_CHECKING:
     from src.meta.core.canonical_vector import CanonicalVector
 
 
+# A watchdog is operational only.  An asynchronous endpoint can require several
+# scheduler callbacks to consume its independently delivered protocol messages.
+WATCHDOG_TICKS_PER_NODE_ITERATION = 10
+
+
 class DistributedOrchestrator:
     """Build node endpoints, start the scheduler, and collect observations only."""
 
@@ -71,7 +76,13 @@ class DistributedOrchestrator:
         self.start(graph, canonical_vector, pre_matched_nodes)
         if self._config is None:
             raise RuntimeError("start() must create a runtime configuration")
-        outcome = self.run(max_ticks=self._config.max_iterations * max(1, len(self._nodes)))
+        outcome = self.run(
+            max_ticks=(
+                self._config.max_iterations
+                * max(1, len(self._nodes))
+                * WATCHDOG_TICKS_PER_NODE_ITERATION
+            )
+        )
         matching, final_weight = self._collect_results(graph)
         if self._transport is None:
             raise RuntimeError("start() must create a transport")

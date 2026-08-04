@@ -36,11 +36,6 @@ class ParallelNodeExecutor:
         executor observes only ``is_active`` and never reads a node vote, state,
         or matching result.
         """
-        modes = {getattr(node, "execution_mode", "asynchronous") for node in nodes.values()}
-        if modes == {"synchronous_rounds"}:
-            return self._run_synchronous_rounds(nodes, max_ticks, tick)
-        if "synchronous_rounds" in modes:
-            raise ValueError("Synchronous-round and asynchronous nodes cannot share one execution")
         scheduled_ticks = 0
         in_flight: Dict[Future, int] = {}
         ready = deque(node_id for node_id, node in nodes.items() if node.is_active())
@@ -81,33 +76,6 @@ class ParallelNodeExecutor:
                 while ready and len(in_flight) < self.max_workers and scheduled_ticks < max_ticks:
                     submit(pool, ready.popleft())
 
-        return self._record_outcome(nodes, scheduled_ticks, max_ticks)
-
-    def _run_synchronous_rounds(
-        self,
-        nodes: Dict[int, object],
-        max_ticks: int,
-        tick: Callable[[object], object] | None,
-    ) -> RuntimeOutcome:
-        """Run one tick per active node, publishing sends only between rounds."""
-        scheduled_ticks = 0
-        while scheduled_ticks < max_ticks:
-            active = [node for node in nodes.values() if node.is_active()]
-            if not active:
-                break
-            transport = getattr(active[0], "transport", None)
-            if transport is None:
-                raise ValueError("Synchronous-round nodes must expose a shared transport")
-            transport.begin_synchronous_round()
-            try:
-                for node in active:
-                    if scheduled_ticks >= max_ticks:
-                        break
-                    operation = (lambda node=node: tick(node)) if tick else node.tick
-                    operation()
-                    scheduled_ticks += 1
-            finally:
-                transport.commit_synchronous_round()
         return self._record_outcome(nodes, scheduled_ticks, max_ticks)
 
     def _record_outcome(

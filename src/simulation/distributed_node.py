@@ -9,8 +9,9 @@ from src.graph.graph_manager import GraphManager
 from src.graph.local_graph import LocalGraph
 from src.metrics.metrics_collector import MetricsCollector
 from src.algorithms.proposal_policy import (
+    build_endpoint_protocols,
     build_local_proposal_policies,
-    combine_local_policy_preferences,
+    select_weight_aware_candidate,
 )
 from src.config import DistributedAlgorithmConfig
 from src.simulation.endpoint_protocol import EndpointProtocol
@@ -93,32 +94,28 @@ class DistributedNode:
             self.id, self.graph, self.state, self.communicator.send_message,
             self.algorithm_config.convergence_threshold, self.algorithm_config.quorum_threshold,
         )
-        protocols = [
-            policy.algorithm.create_protocol(
-                node_id=self.id,
-                graph=self.graph,
-                state=self.state,
-                send_message=self.communicator.send_message,
-                node_count=shared_graph.num_vertices(),
-                config=self.algorithm_config,
-            )
-            for policy in self.proposal_policies
-        ]
-        active_protocols = [protocol for protocol in protocols if protocol is not None]
-        if active_protocols and len(self.proposal_policies) != 1:
-            raise ValueError("An algorithm-supplied endpoint protocol must be selected exclusively")
-        self.algorithm_protocol = active_protocols[0] if active_protocols else None
+        active_protocols = build_endpoint_protocols(
+            self.algorithm_config,
+            node_id=self.id,
+            graph=self.graph,
+            state=self.state,
+            send_message=self.communicator.send_message,
+            node_count=shared_graph.num_vertices(),
+            config=self.algorithm_config,
+        )
+        self.algorithm_protocols = active_protocols
+        self._advisors_ready = False
         # Track should_stop for autonomous loop (Phase 1)
         self.should_stop = False
 
     @property
-    def convergence_vote(self) -> bool | None:
-        return self.convergence.vote
+    def algorithm_protocol(self):
+        """Return the sole advisory protocol for compatibility with protocol-only callers."""
+        return self.algorithm_protocols[0] if len(self.algorithm_protocols) == 1 else None
 
     @property
-    def execution_mode(self) -> str:
-        """Expose an algorithm-requested scheduling semantic without naming it."""
-        return getattr(self.algorithm_protocol, "execution_mode", "asynchronous")
+    def convergence_vote(self) -> bool | None:
+        return self.convergence.vote
 
     @property
     def known_convergence_votes(self) -> Dict[int, bool]:
@@ -212,38 +209,52 @@ class DistributedNode:
 
         # PHASE 0: Process incoming messages
         messages = self.communicator.receive_messages()
-        if self.algorithm_protocol is not None:
-            if self.algorithm_protocol.terminal:
-                if not self.state.is_matched():
-                    self.state.mark_terminal_unmatched()
-                self.finished = True
-                if self._lifecycle_observer is not None:
-                    reason = "matched" if self.state.is_matched() else "terminal_unmatched"
-                    self._lifecycle_observer(self.id, reason, self.local_time)
-                return False, "algorithm_protocol_terminal"
-            if not self.algorithm_protocol.started:
-                self.algorithm_protocol.begin_phase()
-                self.algorithm_protocol.started = True
-            self.algorithm_protocol.tick(messages)
-            self.round_number += 1
-            self.advance_local_time()
-            return True, "algorithm_protocol"
         self._process_coordination_messages(messages)
         self._process_protocol_messages(messages)
         self._expire_tentative_match_if_needed()
 
+        for protocol in self.algorithm_protocols:
+            for message in messages:
+                if message.payload.get("type") == "MATCHED":
+                    protocol.mark_neighbor_unavailable(message.sender)
+            if self.state.is_matched():
+                protocol.retire_from_shared_matcher()
+
+        for protocol in self.algorithm_protocols:
+            if not protocol.started:
+                protocol.begin_phase()
+                protocol.started = True
+            protocol.tick(messages)
+
         # PHASE 1: Get proposals from each cached local policy.
         context = self._create_context(messages)
+        advisory_proposals = {
+            protocol.algorithm_name: protocol.recommendations()
+            for protocol in self.algorithm_protocols
+        }
+        if any(advisory_proposals.values()):
+            self._advisors_ready = True
+        advisors_are_ready = self._advisors_ready or not self.algorithm_protocols or all(
+            protocol.terminal for protocol in self.algorithm_protocols
+        )
         proposals_per_algorithm = {
             policy.name: policy.propose(context) for policy in self.proposal_policies
-        }
+        } if advisors_are_ready else {}
+        proposals_per_algorithm.update(advisory_proposals)
 
         # PHASE 2: Combine normalized local policy preferences. The selected
         # proposal carries the graph's actual edge weight into the endpoint
         # protocol; policy preferences are never sent over the network.
         self.pending_proposals.clear()
-        selected_neighbor = combine_local_policy_preferences(
-            proposals_per_algorithm, self.algorithm_config
+        candidate_neighbors = set().union(*proposals_per_algorithm.values()) if proposals_per_algorithm else set()
+        selected_neighbor = select_weight_aware_candidate(
+            proposals_per_algorithm,
+            {
+                neighbor: self.graph.get_edge_weight(self.id, neighbor)
+                for neighbor in candidate_neighbors
+                if self.state.is_neighbor_eligible(neighbor)
+            },
+            self.algorithm_config,
         )
         if selected_neighbor is not None:
             self.pending_proposals[selected_neighbor] = self.graph.get_edge_weight(
@@ -366,3 +377,4 @@ class DistributedNode:
         self.convergence.reset(self.state)
         self.pending_proposals.clear()
         self.local_time = 0
+        self._advisors_ready = False

@@ -12,6 +12,8 @@ class DistributedAlgorithmConfig:
     convergence_threshold: float = 0.05
     quorum_threshold: float = 0.5
     max_iterations: int = 100
+    algorithm_influence: float = 0.15
+    material_weight_gap: float = 0.10
     schema_version: int = 1
     vector_fingerprint: str = ""
     available_algorithms: tuple[str, ...] = ()
@@ -55,6 +57,8 @@ class DistributedAlgorithmConfig:
             "convergence_threshold": self.convergence_threshold,
             "quorum_threshold": self.quorum_threshold,
             "max_iterations": self.max_iterations,
+            "algorithm_influence": self.algorithm_influence,
+            "material_weight_gap": self.material_weight_gap,
             "schema_version": self.schema_version,
             "vector_fingerprint": self.vector_fingerprint,
             "available_algorithms": list(self.available_algorithms),
@@ -71,6 +75,8 @@ class DistributedAlgorithmConfig:
             convergence_threshold=float(data.get("convergence_threshold", 0.05)),
             quorum_threshold=float(data.get("quorum_threshold", 0.5)),
             max_iterations=int(data.get("max_iterations", 100)),
+            algorithm_influence=float(data.get("algorithm_influence", 0.15)),
+            material_weight_gap=float(data.get("material_weight_gap", 0.10)),
             schema_version=int(data.get("schema_version", 1)),
             vector_fingerprint=str(data.get("vector_fingerprint", "")),
             available_algorithms=tuple(data.get("available_algorithms", ())),
@@ -102,6 +108,8 @@ class DistributedAlgorithmConfig:
         return cls(
             convergence_threshold=vector.get("convergence_threshold") or 0.05,
             max_iterations=int(vector.get("max_iterations") or 100),
+            algorithm_influence=float(vector.get("algorithm_influence") if vector.get("algorithm_influence") is not None else 0.15),
+            material_weight_gap=float(vector.get("material_weight_gap") if vector.get("material_weight_gap") is not None else 0.10),
             vector_fingerprint=vector.fingerprint(),
             available_algorithms=available_algorithms,
             algorithm_parameters=algorithm_parameters,

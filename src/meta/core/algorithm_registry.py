@@ -98,6 +98,15 @@ class AlgorithmRegistry:
         with self._registry_lock:
             return list(self._algorithms.keys())
 
+    def default_algorithm_names(self) -> List[str]:
+        """Return algorithms that may participate in the default policy ensemble."""
+        with self._registry_lock:
+            return [
+                name
+                for name, definition in self._algorithms.items()
+                if not definition.get("exclusive", False)
+            ]
+
     def is_algorithm_registered(self, name: str) -> bool:
         """Check if algorithm is registered.
 

@@ -25,12 +25,16 @@ class AlgorithmMetadata:
 
 
 class MatchingAlgorithm(ABC):
-    """An algorithm that ranks or selects direct neighbours locally."""
+    """Registry-facing base contract shared by matching algorithms."""
 
     @property
     @abstractmethod
     def metadata(self) -> AlgorithmMetadata:
         """Return descriptive registry metadata."""
+
+
+class ProposalPolicyAlgorithm(MatchingAlgorithm):
+    """A matching algorithm that ranks direct neighbours on each node tick."""
 
     @abstractmethod
     def propose_to_neighbors(
@@ -38,6 +42,11 @@ class MatchingAlgorithm(ABC):
     ) -> Dict[int, float]:
         """Return weighted proposals addressed only to direct neighbours."""
 
-    def create_protocol(self, **_: Any) -> Any | None:
-        """Optionally create an opaque endpoint protocol for this algorithm."""
-        return None
+
+
+class EndpointProtocolAlgorithm(MatchingAlgorithm):
+    """A matching algorithm that owns a complete endpoint message protocol."""
+
+    @abstractmethod
+    def create_protocol(self, **context: Any) -> Any:
+        """Create the protocol state owned by one endpoint node."""

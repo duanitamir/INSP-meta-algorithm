@@ -43,6 +43,8 @@ class CanonicalVector:
         base_params = {
             "max_iterations": (5, 100, lambda: __import__("random").randint(5, 100)),
             "convergence_threshold": (0.0, 0.1, lambda: __import__("random").uniform(0.0, 0.1)),
+            "algorithm_influence": (0.0, 0.30, lambda: __import__("random").uniform(0.0, 0.30)),
+            "material_weight_gap": (0.0, 0.50, lambda: __import__("random").uniform(0.0, 0.50)),
         }
 
         registry = AlgorithmRegistry.instance()
@@ -69,7 +71,7 @@ class CanonicalVector:
     @staticmethod
     def _normalize_algorithm_names(algorithms, registry) -> tuple[str, ...]:
         if algorithms is None:
-            return tuple(registry.all_algorithm_names())
+            return tuple(registry.default_algorithm_names())
         names = tuple(getattr(algorithm, "value", algorithm) for algorithm in algorithms)
         unknown = set(names).difference(registry.all_algorithm_names())
         if unknown:

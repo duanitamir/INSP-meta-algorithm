@@ -3,10 +3,10 @@
 import random
 from typing import Dict, List
 
-from src.algorithms.base import AlgorithmMetadata, MatchingAlgorithm
+from src.algorithms.base import AlgorithmMetadata, ProposalPolicyAlgorithm
 
 
-class ItaiIsraeliMaximalMatching(MatchingAlgorithm):
+class ItaiIsraeliMaximalMatching(ProposalPolicyAlgorithm):
     PARAMETERS = {
         "policy_weight": {"min": 0.0, "max": 2.0, "default": 1.0, "type": "number", "description": "Local policy combination weight"},
         "timeout_rounds": {"min": 1, "max": 20, "default": 5, "type": "integer", "description": "Local orientation rotation interval"},

@@ -3,10 +3,10 @@
 import random
 from typing import Dict, List
 
-from src.algorithms.base import AlgorithmMetadata, MatchingAlgorithm
+from src.algorithms.base import AlgorithmMetadata, ProposalPolicyAlgorithm
 
 
-class LubyRandomizedMatching(MatchingAlgorithm):
+class LubyRandomizedMatching(ProposalPolicyAlgorithm):
     PARAMETERS = {
         "policy_weight": {"min": 0.0, "max": 2.0, "default": 1.0, "type": "number", "description": "Local policy combination weight"},
         "base_probability": {"min": 0.0, "max": 1.0, "default": 0.5, "type": "number", "description": "Activation probability"},

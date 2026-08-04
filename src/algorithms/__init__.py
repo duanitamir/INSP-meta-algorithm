@@ -1,3 +1,3 @@
-from .base import MatchingAlgorithm, AlgorithmMetadata
+from .base import AlgorithmMetadata, EndpointProtocolAlgorithm, MatchingAlgorithm, ProposalPolicyAlgorithm
 
-__all__ = ["MatchingAlgorithm", "AlgorithmMetadata"]
+__all__ = ["MatchingAlgorithm", "ProposalPolicyAlgorithm", "EndpointProtocolAlgorithm", "AlgorithmMetadata"]
